@@ -1,73 +1,102 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Dict, Any, Optional
 import numpy as np
-from quantum_state import QuantumState
-import gates, noise, utils
-from utils import bloch_vector, serialize_density_matrix
+from numpy import cos, sin, exp
 
 app = FastAPI()
-quantum_state = QuantumState()
 
-class GateRequest(BaseModel):
-    gate: str
+# Allow CORS for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # change to ["http://localhost:3000"] if you want it strict
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-class NoiseRequest(BaseModel):
-    noise_type: str
-    params: dict
-
-class CircuitStep(BaseModel):
-    type: str  # "gate" or "noise"
+# ---------- Data Models ----------
+class Step(BaseModel):
+    type: str
     name: str
-    params: Optional[dict] = None
+    qubit: int
+    gates: List[str]
+    params: Optional[Dict[str, Any]] = None
 
 class CircuitRequest(BaseModel):
-    steps: List[CircuitStep]
+    steps: List[Step]
 
-@app.post("/apply_gate")
-def apply_gate(request: GateRequest):
-    if request.gate.lower() == "pauli-x":
-        U = gates.pauli_x()
-    else:
-        return {"error": "Gate not implemented"}
-    quantum_state.apply_gate(U)
-    return {
-        "density_matrix": serialize_density_matrix(quantum_state.state),
-        "bloch_vector": bloch_vector(quantum_state.state)
-    }
+# ---------- Gate Definitions ----------
+I = np.eye(2, dtype=complex)
+X = np.array([[0, 1], [1, 0]], dtype=complex)
+Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
+Z = np.array([[1, 0], [0, -1]], dtype=complex)
+H = (1 / np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=complex)
 
-@app.post("/apply_noise")
-def apply_noise(request: NoiseRequest):
-    if request.noise_type.lower() == "amplitude_damping":
-        gamma = request.params.get("gamma", 0.1)
-        kraus_ops = noise.amplitude_damping(gamma)
-    else:
-        return {"error": "Noise type not implemented"}
-    quantum_state.apply_kraus(kraus_ops)
-    return {
-        "density_matrix": serialize_density_matrix(quantum_state.state),
-        "bloch_vector": bloch_vector(quantum_state.state)
-    }
+def Rx(theta: float):
+    return np.array([
+        [cos(theta/2), -1j*sin(theta/2)],
+        [-1j*sin(theta/2), cos(theta/2)]
+    ], dtype=complex)
 
+def Ry(theta: float):
+    return np.array([
+        [cos(theta/2), -sin(theta/2)],
+        [sin(theta/2), cos(theta/2)]
+    ], dtype=complex)
+
+def Rz(theta: float):
+    return np.array([
+        [exp(-1j*theta/2), 0],
+        [0, exp(1j*theta/2)]
+    ], dtype=complex)
+
+gate_map = {
+    "X": X,
+    "Y": Y,
+    "Z": Z,
+    "H": H,
+    "Rx": Rx,
+    "Ry": Ry,
+    "Rz": Rz
+}
+
+# ---------- Utility Functions ----------
+def bloch_vector(state: np.ndarray) -> Dict[str, float]:
+    """Compute Bloch vector from a state vector."""
+    rho = np.outer(state, state.conj())  # density matrix
+    x = np.real(np.trace(rho @ X))
+    y = np.real(np.trace(rho @ Y))
+    z = np.real(np.trace(rho @ Z))
+    return {"x": float(x), "y": float(y), "z": float(z)}
+
+def density_matrix(state: np.ndarray) -> List[List[List[float]]]:
+    """Convert density matrix to JSON-serializable format."""
+    rho = np.outer(state, state.conj())
+    return [[[float(np.real(val)), float(np.imag(val))] for val in row] for row in rho]
+
+# ---------- Simulation ----------
 @app.post("/run_circuit")
-def run_circuit(request: CircuitRequest):
-    quantum_state.reset()
-    results = []
-    for step in request.steps:
-        if step.type == "gate":
-            if step.name.lower() == "pauli-x":
-                quantum_state.apply_gate(gates.pauli_x())
-        elif step.type == "noise":
-            if step.name.lower() == "amplitude_damping":
-                gamma = step.params.get("gamma", 0.1)
-                quantum_state.apply_kraus(noise.amplitude_damping(gamma))
-        results.append({
-            "density_matrix": serialize_density_matrix(quantum_state.state),
-            "bloch_vector": bloch_vector(quantum_state.state)
-        })
-    return {"steps": results}
+async def run_circuit(circuit: CircuitRequest):
+    steps_output = []
 
-@app.get("/reset")
-def reset():
-    quantum_state.reset()
-    return {"message": "Quantum state reset"}
+    # Start in |0⟩ state
+    state = np.array([1, 0], dtype=complex)
+
+    for step in circuit.steps:
+        for g in step.gates:
+            if g in ["Rx", "Ry", "Rz"]:
+                theta = step.params.get("theta", np.pi/2)
+                U = gate_map[g](theta)
+            else:
+                U = gate_map[g]
+
+            state = U @ state
+
+        steps_output.append({
+            "bloch_vector": bloch_vector(state),
+            "density_matrix": density_matrix(state)
+        })
+
+    return {"steps": steps_output}
