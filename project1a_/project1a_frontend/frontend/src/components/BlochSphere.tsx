@@ -5,17 +5,20 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 
 interface BlochSphereProps {
-  blochVector: { x: number; y: number; z: number };
+  blochVector?: { x: number; y: number; z: number };
 }
 
 const BlochSphere: React.FC<BlochSphereProps> = ({ blochVector }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
 
     const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
     const camera = new THREE.PerspectiveCamera(
       75,
       mount.clientWidth / mount.clientHeight,
@@ -29,10 +32,9 @@ const BlochSphere: React.FC<BlochSphereProps> = ({ blochVector }) => {
     mount.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableZoom = true; // Allow zoom
+    controls.enableZoom = true;
     controls.enablePan = false;
-    controls.rotateSpeed = 1.0;
-    controls.zoomSpeed = 1.2;
+    controlsRef.current = controls;
 
     // Bloch Sphere
     const sphereGeometry = new THREE.SphereGeometry(1, 64, 64);
@@ -50,19 +52,14 @@ const BlochSphere: React.FC<BlochSphereProps> = ({ blochVector }) => {
     scene.add(axesHelper);
 
     // Bloch vector line
-    const vector = new THREE.Vector3(
-      blochVector?.x ?? 0,
-      blochVector?.y ?? 0,
-      blochVector?.z ?? 1
-    ).normalize();
-
-    const points = [new THREE.Vector3(0, 0, 0), vector];
-    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
     const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
-    const blochLine = new THREE.Line(lineGeometry, lineMaterial);
+    const blochLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0)]),
+      lineMaterial
+    );
     scene.add(blochLine);
 
-    // Tooltip for angles
+    // Tooltip
     const tooltip = document.createElement("div");
     tooltip.style.position = "absolute";
     tooltip.style.background = "rgba(0,0,0,0.7)";
@@ -82,9 +79,17 @@ const BlochSphere: React.FC<BlochSphereProps> = ({ blochVector }) => {
 
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObject(sphere);
+
       if (intersects.length > 0) {
+        const vector = new THREE.Vector3(
+          blochVector?.x ?? 0,
+          blochVector?.y ?? 0,
+          blochVector?.z ?? 1
+        ).normalize();
+
         const theta = Math.acos(vector.z).toFixed(2);
         const phi = Math.atan2(vector.y, vector.x).toFixed(2);
+
         tooltip.innerHTML = `θ: ${theta} rad<br>φ: ${phi} rad`;
         tooltip.style.left = `${event.clientX + 10}px`;
         tooltip.style.top = `${event.clientY + 10}px`;
@@ -93,10 +98,23 @@ const BlochSphere: React.FC<BlochSphereProps> = ({ blochVector }) => {
         tooltip.style.display = "none";
       }
     }
+
     window.addEventListener("mousemove", onMouseMove);
 
     function animate() {
       requestAnimationFrame(animate);
+
+      const vector = new THREE.Vector3(
+        blochVector?.x ?? 0,
+        blochVector?.y ?? 0,
+        blochVector?.z ?? 1
+      ).normalize();
+
+      blochLine.geometry.setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        vector,
+      ]);
+
       controls.update();
       renderer.render(scene, camera);
     }
@@ -109,7 +127,7 @@ const BlochSphere: React.FC<BlochSphereProps> = ({ blochVector }) => {
     };
   }, [blochVector]);
 
-  return <div ref={mountRef} className="w-full h-[500px]"></div>;
+  return <div ref={mountRef} style={{ width: "100%", height: "100%" }} />;
 };
 
 export default BlochSphere;
