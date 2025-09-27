@@ -1,50 +1,24 @@
-// src/components/GatePalette.tsx
 "use client";
-
 import React from "react";
 import { useDrag } from "react-dnd";
-import { Gate } from "../types";
+import type { Gate } from "../types";
 
-interface GatePaletteProps {
-  gates: Gate[];
-}
-
-interface GateItemProps {
-  gate: Gate;
-}
-
-const GateItem: React.FC<GateItemProps> = ({ gate }) => {
-  const [, drag] = useDrag(() => ({
-    type: "GATE",
-    item: { gate },
-  }));
-
+function GateItem({ gate }: { gate: Gate }) {
+  const [, drag] = useDrag(() => ({ type: "GATE", item: { gate } }));
   return (
     <div
       ref={(node) => drag(node as HTMLDivElement)}
-      style={{
-        padding: "8px",
-        margin: "4px",
-        background: "#222",
-        borderRadius: "4px",
-        cursor: "grab",
-      }}
+      className="bg-zinc-800 hover:bg-zinc-700 rounded px-2 py-1 cursor-grab select-none"
     >
       {gate.name}
     </div>
   );
-};
+}
 
-export default function GatePalette({ gates }: GatePaletteProps) {
-  if (!gates || gates.length === 0) {
-    return <div>No gates available</div>;
-  }
-
+export default function GatePalette({ gates }: { gates: Gate[] }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-      {gates.map((gate) => (
-        <GateItem key={gate.id} gate={gate} />
-      ))}
+    <div className="flex flex-col gap-2">
+      {gates.map((g) => <GateItem key={g.id} gate={g} />)}
     </div>
   );
 }
