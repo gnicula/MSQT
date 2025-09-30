@@ -3,11 +3,11 @@
 # ------------------------
 node_modules
 .next
-.out
+out
 build
 dist
 
-# lockfiles we don’t want at root (only keep inside frontend/)
+# lockfiles (ignore at root; keep only inside frontend/)
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
@@ -31,14 +31,12 @@ pnpm-debug.log*
 next-env.d.ts
 
 # ------------------------
-# Python backend (local use only)
+# Python backend (local only)
 # ------------------------
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.egg-info/
-.eggs/
+project1a_backend/__pycache__/
+project1a_backend/*.pyc
+project1a_backend/*.pyo
+project1a_backend/*.pyd
 .venv/
 venv/
 env/
