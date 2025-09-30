@@ -7,6 +7,7 @@ import type {
   NoiseParams,
   GateName,
   GateParams,
+  NoiseName,
 } from "../types";
 
 interface GateEditorProps {
@@ -49,7 +50,7 @@ function isRotationGate(name: string): name is "Rx" | "Ry" | "Rz" {
   return name === "Rx" || name === "Ry" || name === "Rz";
 }
 
-// Canonical snap set and exact labels for θ
+/** ---- θ snapping helpers (write exact constants when near special angles) ---- */
 const SNAP_SET = [
   0,
   Math.PI / 6,
@@ -66,7 +67,7 @@ const SNAP_SET = [
   -Math.PI / 2,
   -(3 * Math.PI) / 4,
   -Math.PI,
-];
+] as const;
 
 const SNAP_LABELS: Record<number, string> = {
   [0]: "0",
@@ -87,7 +88,7 @@ const SNAP_LABELS: Record<number, string> = {
 };
 
 function nearestSnap(theta: number) {
-  let best = SNAP_SET[0],
+  let best = SNAP_SET[0] as number,
     dmin = Infinity;
   for (const v of SNAP_SET) {
     const d = Math.abs(theta - v);
@@ -102,10 +103,11 @@ function nearestSnap(theta: number) {
 function prettyTheta(theta?: number) {
   if (theta == null) return "—";
   const { value, dist } = nearestSnap(theta);
-  if (dist < 1e-6) return SNAP_LABELS[value] ?? theta.toFixed(3); // exactly snapped
-  if (dist < 0.02) return SNAP_LABELS[value] ?? theta.toFixed(3); // near→show canonical
+  if (dist < 1e-6) return SNAP_LABELS[value] ?? theta.toFixed(3);
+  if (dist < 0.02) return SNAP_LABELS[value] ?? theta.toFixed(3);
   return theta.toFixed(3);
 }
+/** --------------------------------------------------------------------------- */
 
 const GateEditor: React.FC<GateEditorProps> = ({
   workspace,
@@ -121,6 +123,8 @@ const GateEditor: React.FC<GateEditorProps> = ({
 }) => {
   const [localSelected, setLocalSelected] = React.useState<number | null>(null);
 
+  // react-dnd drop target with ref connector (avoids LegacyRef typing issues)
+  const dropRef = React.useRef<HTMLDivElement | null>(null);
   const [, drop] = useDrop<DragPayload, void>(() => ({
     accept: "PALETTE_ITEM",
     drop: (payload) => {
@@ -128,7 +132,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
       const id = makeId();
 
       if (it.type === "gate") {
-        // Keep fixed gates fixed; only the Rotation palette item carries Rx (editable to Ry/Rz)
+        // Keep fixed gates fixed; only "Rotation (θ)" palette item arrives with op "Rx".
         const name = it.op as GateName; // "X" | "Y" | "Z" | "H" | "Rx" | "Ry" | "Rz"
         const theta = name.startsWith("R") ? it.parameter ?? Math.PI / 4 : undefined;
         setWorkspace((prev) => [
@@ -137,7 +141,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
         ]);
       } else {
         // Noise defaults
-        const p = it.parameter ?? 0;
+        const p = it.parameter ?? 0.1;
         const params: NoiseParams =
           it.op === "amplitude_damping"
             ? { gamma: p }
@@ -154,12 +158,11 @@ const GateEditor: React.FC<GateEditorProps> = ({
     },
   }), [setWorkspace, onNudgeForAutoRun]);
 
-  const setDropRef = React.useCallback(
-    (node: HTMLDivElement | null) => {
-      if (node) (drop as any)(node); // TS: connect drop to the DOM node
-    },
-    [drop]
-  );
+  React.useEffect(() => {
+    if (dropRef.current) {
+      (drop as any)(dropRef);
+    }
+  }, [drop]);
 
   const selectStep = (s: CircuitStep) =>
     onSelectStep ? onSelectStep(s) : setLocalSelected(s.id);
@@ -194,11 +197,10 @@ const GateEditor: React.FC<GateEditorProps> = ({
     onNudgeForAutoRun?.();
   };
 
-  // Live θ update with exact snapping
+  // θ update with exact snapping
   const updateTheta = (id: number, rawTheta: number) => {
     const { value, dist } = nearestSnap(rawTheta);
-    const snapped = dist < 0.04 ? value : rawTheta; // write the exact constant if close
-
+    const snapped = dist < 0.04 ? value : rawTheta;
     setWorkspace((prev) =>
       prev.map((s) => {
         if (s.id !== id || s.type !== "gate" || !isRotationGate(s.name)) return s;
@@ -209,9 +211,27 @@ const GateEditor: React.FC<GateEditorProps> = ({
     onNudgeForAutoRun?.();
   };
 
+  // Noise updates
+  const updateNoiseParam = (
+    id: number,
+    key: keyof NoiseParams, // "gamma" | "lambda" | "p"
+    value: number
+  ) => {
+    setWorkspace((prev) =>
+      prev.map((s) => {
+        if (s.id !== id || s.type !== "noise") return s;
+        const prevParams: NoiseParams = (s.params as NoiseParams) || {};
+        return { ...s, params: { ...prevParams, [key]: value } };
+      })
+    );
+    onNudgeForAutoRun?.();
+  };
+
+  const selectedKey = selectedId ?? localSelected;
+
   return (
     <div
-      ref={setDropRef}
+      ref={dropRef}
       className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h-[460px] w-full"
     >
       <div className="flex items-center justify-between mb-2">
@@ -222,7 +242,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
             checked={!!autoRun}
             onChange={(e) => onToggleAutoRun?.(e.target.checked)}
           />
-          Auto-run
+            Auto-run
         </label>
       </div>
 
@@ -232,10 +252,103 @@ const GateEditor: React.FC<GateEditorProps> = ({
 
       <div className="flex flex-col gap-2">
         {workspace.map((s, idx) => {
-          const isSelected = s.id === (selectedId ?? localSelected);
-          const isGate = s.type === "gate";
-          const theta = isGate ? (s.params as GateParams | undefined)?.theta : undefined;
-          const nearSnap = typeof theta === "number" && nearestSnap(theta).dist < 0.02;
+          const isSelected = s.id === selectedKey;
+
+          const renderGateControls = () => {
+            if (s.type !== "gate") return null;
+            const isRot = isRotationGate(s.name);
+            const theta = isRot ? (s.params as GateParams | undefined)?.theta ?? 0 : undefined;
+            const nearSnap = typeof theta === "number" && nearestSnap(theta).dist < 0.02;
+
+            return (
+              <div className="mt-2 space-y-2 text-xs">
+                {isRot && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="opacity-70">Axis</span>
+                      <select
+                        className="bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
+                        value={s.name}
+                        onChange={(e) =>
+                          updateGateName(s.id, e.target.value as GateName)
+                        }
+                      >
+                        <option value="Rx">Rx</option>
+                        <option value="Ry">Ry</option>
+                        <option value="Rz">Rz</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="opacity-70">θ (radians)</span>
+                        <div className="flex items-center gap-2">
+                          {nearSnap && (
+                            <span className="px-1 py-0.5 rounded bg-emerald-700/40 border border-emerald-500 text-emerald-100">
+                              snapped
+                            </span>
+                          )}
+                          <span className="tabular-nums">
+                            {prettyTheta(theta)}
+                          </span>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min={-Math.PI}
+                        max={Math.PI}
+                        step={Math.PI / 180}
+                        value={theta ?? 0}
+                        onChange={(e) =>
+                          updateTheta(s.id, parseFloat(e.target.value))
+                        }
+                        className="w-full mt-1"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          };
+
+          const renderNoiseControls = () => {
+            if (s.type !== "noise") return null;
+            const name = s.name as NoiseName;
+            const params: NoiseParams = (s.params as NoiseParams) || {};
+
+            // A single slider per noise op (all in [0,1])
+            const sliderRow = (
+              label: string,
+              key: keyof NoiseParams,
+              value: number | undefined
+            ) => (
+              <div className="mt-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="opacity-70">{label}</span>
+                  <span className="tabular-nums">{(value ?? 0).toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={value ?? 0}
+                  onChange={(e) =>
+                    updateNoiseParam(s.id, key, parseFloat(e.target.value))
+                  }
+                  className="w-full mt-1"
+                />
+              </div>
+            );
+
+            return (
+              <div className="mt-2">
+                {name === "amplitude_damping" && sliderRow("γ (strength)", "gamma", params.gamma)}
+                {name === "phase_damping" && sliderRow("λ (strength)", "lambda", params.lambda)}
+                {name === "depolarizing" && sliderRow("p (probability)", "p", params.p)}
+              </div>
+            );
+          };
 
           return (
             <div
@@ -248,11 +361,11 @@ const GateEditor: React.FC<GateEditorProps> = ({
             >
               <div
                 className="cursor-pointer flex items-center gap-2"
-                onClick={() => selectStep(s)}
+                onClick={() => (onSelectStep ? onSelectStep(s) : setLocalSelected(s.id))}
                 title="Click to edit parameters"
               >
                 <span className="font-medium">
-                  {isGate ? s.name : `${s.name} (noise)`}
+                  {s.type === "gate" ? s.name : `${s.name} (noise)`}
                 </span>
                 {s.params ? (
                   <span className="text-zinc-400 text-xs">
@@ -265,54 +378,11 @@ const GateEditor: React.FC<GateEditorProps> = ({
               </div>
 
               {isSelected && (
-                <div className="mt-2 space-y-2 text-xs">
-                  {isGate && isRotationGate(s.name) && (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <span className="opacity-70">Axis</span>
-                        <select
-                          className="bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
-                          value={s.name}
-                          onChange={(e) =>
-                            updateGateName(s.id, e.target.value as GateName)
-                          }
-                        >
-                          <option value="Rx">Rx</option>
-                          <option value="Ry">Ry</option>
-                          <option value="Rz">Rz</option>
-                        </select>
-                      </div>
+                <>
+                  {renderGateControls()}
+                  {renderNoiseControls()}
 
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="opacity-70">θ (radians)</span>
-                          <div className="flex items-center gap-2">
-                            {nearSnap && (
-                              <span className="px-1 py-0.5 rounded bg-emerald-700/40 border border-emerald-500 text-emerald-100">
-                                snapped
-                              </span>
-                            )}
-                            <span className="tabular-nums">
-                              {prettyTheta(theta)}
-                            </span>
-                          </div>
-                        </div>
-                        <input
-                          type="range"
-                          min={-Math.PI}
-                          max={Math.PI}
-                          step={Math.PI / 180}
-                          value={theta ?? 0}
-                          onChange={(e) =>
-                            updateTheta(s.id, parseFloat(e.target.value))
-                          }
-                          className="w-full mt-1"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  <div className="pt-1 flex gap-1">
+                  <div className="pt-2 flex gap-1">
                     <Btn onClick={() => moveStep(s.id, -1)} title="Move up">
                       ↑
                     </Btn>
@@ -327,7 +397,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                       ✕
                     </Btn>
                   </div>
-                </div>
+                </>
               )}
             </div>
           );
