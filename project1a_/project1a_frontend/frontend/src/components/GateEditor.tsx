@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useDrop } from "react-dnd";
-import type { CircuitStep, PaletteItem } from "../types";
+import type { CircuitStep, PaletteItem, NoiseParams } from "../types";
 
 interface GateEditorProps {
   workspace: CircuitStep[];
@@ -59,7 +59,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
       } else {
         // Noise palette item -> CircuitStep (channel)
         const p = it.parameter ?? 0;
-        const params =
+        const params: NoiseParams =
           it.op === "amplitude_damping"
             ? { gamma: p }
             : it.op === "phase_damping"

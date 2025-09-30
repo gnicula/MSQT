@@ -22,17 +22,30 @@ export type Noise = {
 /** What the palette shows on the right */
 export type PaletteItem = Gate | Noise;
 
-/** What the workspace editor holds and what we send to /api/run_circuit */
+/** Gate step params */
+export type GateParams = {
+  theta?: number;
+  angle?: number;
+  Theta?: number;
+};
+
+/** Noise step params (optional keys by design) */
+export type NoiseParams = {
+  gamma?: number;  // amplitude damping
+  lambda?: number; // phase damping
+  p?: number;      // depolarizing
+};
+
 export type CircuitStep =
   | {
       id: number;
       type: "gate";
-      name: string;
-      params?: { theta?: number; angle?: number; Theta?: number };
+      name: GateName;
+      params?: GateParams;
     }
   | {
       id: number;
       type: "noise";
-      name: string;
-      params?: Record<string, number>;
+      name: NoiseName;
+      params?: NoiseParams;
     };
