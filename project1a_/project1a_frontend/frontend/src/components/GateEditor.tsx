@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useDrop } from "react-dnd";
-import type { Gate, CircuitStep } from "../types";
+import type { CircuitStep, PaletteItem } from "../types";
 
 interface GateEditorProps {
   workspace: CircuitStep[];
@@ -26,6 +26,11 @@ function makeId() {
   return Number(`${Date.now()}${Math.floor(Math.random() * 1e6)}`);
 }
 
+type DragPayload = {
+  kind: "palette-item";
+  item: PaletteItem; // can be a gate or a noise item
+};
+
 const GateEditor: React.FC<GateEditorProps> = ({
   workspace,
   setWorkspace,
@@ -35,29 +40,38 @@ const GateEditor: React.FC<GateEditorProps> = ({
   onMoveDown,
   onDelete,
 }) => {
-  const [, drop] = useDrop(() => ({
-    accept: "GATE",
-    drop: (item: { gate: Gate }) => {
+  const [, drop] = useDrop<DragPayload, void>(() => ({
+    accept: "PALETTE_ITEM",
+    drop: (payload) => {
+      const it = payload.item;
       const id = makeId();
-      if (item.gate.type === "gate") {
-        const theta = item.gate.parameter ?? Math.PI / 2;
 
-        // NEW: generic Rotation gate (op === "R") becomes Rx by default
-        const op = item.gate.op === "R" ? "Rx" : (item.gate.op as any);
-
-        setWorkspace((prev) => [
-          ...prev,
-          { id, type: "gate", name: op, params: { theta } },
-        ]);
+      if (it.type === "gate") {
+        // Gate palette item -> CircuitStep (unitary)
+        const theta = it.parameter ?? (it.op.startsWith("R") ? Math.PI / 2 : undefined);
+        const step: CircuitStep = {
+          id,
+          type: "gate",
+          name: it.op, // "X" | "Y" | "Z" | "H" | "Rx" | "Ry" | "Rz"
+          params: theta != null ? { theta } : undefined,
+        };
+        setWorkspace((prev) => [...prev, step]);
       } else {
-        const defaults =
-          item.gate.op === "amplitude_damping" ? { gamma: item.gate.parameter ?? 0.1 } :
-          item.gate.op === "phase_damping" ? { lambda: item.gate.parameter ?? 0.1 } :
-          { p: item.gate.parameter ?? 0.05 };
-        setWorkspace((prev) => [
-          ...prev,
-          { id, type: "noise", name: item.gate.op as any, params: defaults },
-        ]);
+        // Noise palette item -> CircuitStep (channel)
+        const p = it.parameter ?? 0;
+        const params =
+          it.op === "amplitude_damping"
+            ? { gamma: p }
+            : it.op === "phase_damping"
+            ? { lambda: p }
+            : { p };
+        const step: CircuitStep = {
+          id,
+          type: "noise",
+          name: it.op, // "amplitude_damping" | "phase_damping" | "depolarizing"
+          params,
+        };
+        setWorkspace((prev) => [...prev, step]);
       }
     },
   }), [setWorkspace]);
@@ -65,7 +79,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
   return (
     <div ref={drop} className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h-[240px] w-full">
       <div className="text-sm font-semibold text-zinc-200 mb-2">Workspace</div>
-      {workspace.length === 0 && <p className="text-zinc-500">Drag gates here</p>}
+      {workspace.length === 0 && <p className="text-zinc-500">Drag gates/noise here</p>}
       <div className="flex flex-col gap-2">
         {workspace.map((s, idx) => {
           const isSelected = s.id === selectedId;
@@ -86,12 +100,22 @@ const GateEditor: React.FC<GateEditorProps> = ({
                 <span className="font-medium">
                   {s.type === "gate" ? s.name : `${s.name} (noise)`}
                 </span>{" "}
-                {s.params ? <span className="text-zinc-400 text-xs">{JSON.stringify(s.params)}</span> : null}
+                {s.params ? (
+                  <span className="text-zinc-400 text-xs">
+                    {JSON.stringify(s.params)}
+                  </span>
+                ) : null}
               </div>
               <div className="mt-1 flex gap-1">
                 <Btn onClick={() => onMoveUp?.(s.id)} title="Move up">↑</Btn>
                 <Btn onClick={() => onMoveDown?.(s.id)} title="Move down">↓</Btn>
-                <Btn className="!bg-red-900 hover:!bg-red-800 border-red-700" onClick={() => onDelete?.(s.id)} title="Delete">✕</Btn>
+                <Btn
+                  className="!bg-red-900 hover:!bg-red-800 border-red-700"
+                  onClick={() => onDelete?.(s.id)}
+                  title="Delete"
+                >
+                  ✕
+                </Btn>
                 <span className="ml-auto text-[10px] text-zinc-500">#{idx + 1}</span>
               </div>
             </div>
