@@ -1,35 +1,29 @@
-// src/app/layout.tsx
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { ReactNode } from "react";
-import DndProviderWrapper from "../components/DndProviderWrapper";
+import type { Metadata } from "next";
+import { Inter, Roboto_Mono } from "next/font/google";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const sans = Inter({
   subsets: ["latin"],
+  display: "swap",
+  variable: "--font-sans",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const mono = Roboto_Mono({
   subsets: ["latin"],
+  display: "swap",
+  variable: "--font-mono",
 });
 
-export const metadata = {
-  title: "Quantum Gate Playground",
-  description: "Drag, drop, and manipulate quantum gates",
+export const metadata: Metadata = {
+  title: "MSQT — Bloch Sphere",
+  description: "Single-qubit gates, noise channels, and Bloch sphere visualization",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <DndProviderWrapper>{children}</DndProviderWrapper>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+      <body className="font-sans bg-black text-zinc-100">
+        {children}
       </body>
     </html>
   );

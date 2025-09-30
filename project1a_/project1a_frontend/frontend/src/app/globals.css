@@ -1,15 +1,9 @@
 @import "tailwindcss";
 
+/* Light/Dark color tokens */
 :root {
   --background: #ffffff;
   --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,8 +13,31 @@
   }
 }
 
+/* Tailwind v4 inline theme tokens
+   Map TW's font tokens to the Next/font CSS variables we set in layout.tsx:
+   - layout.tsx defines: --font-sans (Inter) and --font-mono (Roboto Mono)
+*/
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  /* Use Next/font variables with sensible fallbacks */
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+               Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+               "Roboto Mono", "Liberation Mono", monospace;
+}
+
+/* Base document styles */
+html, body {
+  height: 100%;
+}
+
 body {
+  margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+
+  /* Use the Inter font (via Next/font) with fallbacks */
+  font-family: var(--font-sans);
 }
