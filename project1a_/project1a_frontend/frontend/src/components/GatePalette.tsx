@@ -6,6 +6,12 @@ import type { PaletteItem } from "../types";
 type DragPayload = { kind: "palette-item"; item: PaletteItem };
 
 function PaletteButton({ item }: { item: PaletteItem }) {
+  // Use a ref object and let react-dnd decorate it; avoids callback-ref type issues
+  const nodeRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Attach the drag connector to our ref
+  // (In react-dnd v16, the connector is a function you call with the ref object)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const [, drag] = useDrag<DragPayload, void, unknown>(
     () => ({
       type: "PALETTE_ITEM",
@@ -14,9 +20,16 @@ function PaletteButton({ item }: { item: PaletteItem }) {
     [item]
   );
 
+  React.useEffect(() => {
+    if (nodeRef.current) {
+      // Important: pass the ref object, not a callback
+      drag(nodeRef);
+    }
+  }, [drag]);
+
   return (
     <div
-      ref={(node) => drag(node as HTMLDivElement)}
+      ref={nodeRef}
       className="bg-zinc-800 hover:bg-zinc-700 rounded px-2 py-1 cursor-grab select-none"
       title={item.type === "gate" ? item.op : `${item.op} (noise)`}
     >
