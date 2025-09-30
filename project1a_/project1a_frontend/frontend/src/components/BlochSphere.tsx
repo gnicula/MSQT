@@ -42,7 +42,7 @@ function makeLabelSprite(text: string, color = "#ffffff", scale = 0.22) {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d")!;
-  ctx.clearRect(0, 0, size, 0);
+  ctx.clearRect(0, 0, size, size);
 
   ctx.font = "bold 72px Inter, system-ui, -apple-system, Segoe UI, Roboto";
   ctx.textAlign = "center";

@@ -143,7 +143,7 @@ function densityFromBloch(r: Bloch): number[][][] {
  * Run a sequence of gates/noise steps on a single qubit starting at |0>.
  * We include the initial state in the output (index 0) for easier front-end plotting.
  */
-function runSim(steps: CircuitStep[]: RunResponse {
+function runSim(steps: CircuitStep[]): RunResponse {
   let r: Bloch = { x: 0, y: 0, z: 1 }; // |0> is north pole
   const out: StepResult[] = [];
 
