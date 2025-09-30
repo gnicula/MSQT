@@ -1,5 +1,4 @@
 // Hybrid route: proxy to Python if BACKEND_URL is set; otherwise run TS simulator.
-// Works on Vercel (no Python) and locally (with or w/o Uvicorn).
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -26,9 +25,8 @@ async function proxyToPython(reqBody: any) {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // Don't cache within Vercel edge/node
     cache: "no-store",
-    body: JSON.stringify(reqBody),
+    body: JSON.stringify(reqBody)
   });
   const data = await res.json();
   return NextResponse.json(data, { status: res.status });
@@ -68,12 +66,12 @@ function applyGate(nameRaw: string, r: Bloch, theta?: number): Bloch {
 }
 function applyNoise(name: string, r: Bloch, params: Record<string, number> = {}): Bloch {
   if (name === "amplitude_damping") {
-    const g = clamp01(params.gamma ?? params["γ"] ?? 0);
+    const g = clamp01(params.gamma ?? (params as any)["γ"] ?? 0);
     const s = Math.sqrt(Math.max(0, 1 - g));
     return clampBall({ x: s * r.x, y: s * r.y, z: (1 - g) * r.z + g });
   }
   if (name === "phase_damping") {
-    const l = clamp01(params.lambda ?? params["λ"] ?? 0);
+    const l = clamp01(params.lambda ?? (params as any)["λ"] ?? 0);
     const f = Math.max(0, 1 - l);
     return clampBall({ x: f * r.x, y: f * r.y, z: r.z });
   }
@@ -84,6 +82,7 @@ function applyNoise(name: string, r: Bloch, params: Record<string, number> = {})
   }
   return r;
 }
+// ρ = 1/2 ( I + rx X + ry Y + rz Z ); encode entries as [re, im]
 function densityFromBloch(r: Bloch): number[][][] {
   const a = 0.5 * (1 + r.z);
   const d = 0.5 * (1 - r.z);
@@ -91,7 +90,7 @@ function densityFromBloch(r: Bloch): number[][][] {
   const im01 = -0.5 * r.y;
   return [
     [ [a, 0], [re01, im01] ],
-    [ [re01, -im01], [d, 0] ],
+    [ [re01, -im01], [d, 0] ]
   ];
 }
 function runSim(steps: CircuitStep[]): RunResponse {
@@ -116,11 +115,9 @@ export async function POST(req: Request) {
   const body = await req.json();
   const steps: CircuitStep[] = Array.isArray(body?.steps) ? body.steps : [];
 
-  // If BACKEND_URL is present, proxy to Python; otherwise use TS simulator.
   if (BACKEND_URL) {
     try { return await proxyToPython({ steps }); }
-    catch (e: any) {
-      // if proxy fails, fall back to TS sim so UI still works
+    catch {
       const resp = runSim(steps);
       return NextResponse.json(resp, { headers: { "Cache-Control": "no-store" } });
     }
