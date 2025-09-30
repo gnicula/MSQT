@@ -13,43 +13,25 @@ type StepResult = { bloch_vector: BlochVector; density_matrix: number[][][] };
 type RunResponse = { steps: StepResult[] };
 
 /** Vector helpers */
-function length(v: BlochVector) {
-  return Math.hypot(v.x, v.y, v.z);
-}
-function normalize(v: BlochVector): BlochVector {
-  const L = length(v) || 1;
-  return { x: v.x / L, y: v.y / L, z: v.z / L };
-}
-function dot(a: BlochVector, b: BlochVector) {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t;
-}
-function vecLerp(a: BlochVector, b: BlochVector, t: number): BlochVector {
-  return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) };
-}
-/** Spherical linear interpolation (geodesic) for unitary steps */
+function length(v: BlochVector) { return Math.hypot(v.x, v.y, v.z); }
+function normalize(v: BlochVector): BlochVector { const L = length(v) || 1; return { x: v.x / L, y: v.y / L, z: v.z / L }; }
+function dot(a: BlochVector, b: BlochVector) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
+function vecLerp(a: BlochVector, b: BlochVector, t: number): BlochVector { return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) }; }
 function slerpUnit(a: BlochVector, b: BlochVector, t: number): BlochVector {
-  const an = normalize(a);
-  const bn = normalize(b);
-  let cosom = Math.max(-1, Math.min(1, dot(an, bn)));
+  const an = normalize(a), bn = normalize(b);
+  const cosom = Math.max(-1, Math.min(1, dot(an, bn)));
   const EPS = 1e-6;
-
   if (1 - Math.abs(cosom) < EPS) {
     const v = vecLerp(an, bn, t);
     const L = length(v);
     return L > EPS ? { x: v.x / L, y: v.y / L, z: v.z / L } : an;
   }
-  const omega = Math.acos(cosom);
-  const sinom = Math.sin(omega);
-  const s0 = Math.sin((1 - t) * omega) / sinom;
-  const s1 = Math.sin(t * omega) / sinom;
+  const omega = Math.acos(cosom), sinom = Math.sin(omega);
+  const s0 = Math.sin((1 - t) * omega) / sinom, s1 = Math.sin(t * omega) / sinom;
   return { x: s0 * an.x + s1 * bn.x, y: s0 * an.y + s1 * bn.y, z: s0 * an.z + s1 * bn.z };
 }
-function easeInOutCubic(t: number) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
+function easeInOutCubic(t: number) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
 
 export default function HomePage() {
   const [workspace, setWorkspace] = useState<CircuitStep[]>([]);
@@ -57,8 +39,19 @@ export default function HomePage() {
 
   // Playback state
   const [idx, setIdx] = useState(0);
-  const [isRunning, setIsRunning] = useState(false);  // API call in-flight
-  const [isPlaying, setIsPlaying] = useState(false);  // animate transitions
+  const [isRunning, setIsRunning] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Auto-run
+  const [autoRun, setAutoRun] = useState(true);
+  const autoRunTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nudgeAutoRun = () => {
+    if (!autoRun) return;
+    if (autoRunTimer.current) clearTimeout(autoRunTimer.current);
+    autoRunTimer.current = setTimeout(() => {
+      if (workspace.length > 0) runCircuit();
+    }, 250);
+  };
 
   // Animation config
   const [stepDurationMs, setStepDurationMs] = useState(900);
@@ -79,11 +72,7 @@ export default function HomePage() {
     return results[i].bloch_vector;
   }, [results, idx]);
 
-  useEffect(() => {
-    if (rafRef.current == null) {
-      setRenderBV(instantBV);
-    }
-  }, [instantBV]);
+  useEffect(() => { if (rafRef.current == null) setRenderBV(instantBV); }, [instantBV]);
 
   function cancelTween() {
     if (rafRef.current != null) {
@@ -104,9 +93,7 @@ export default function HomePage() {
       const now = performance.now();
       const tRaw = (now - tweenStartRef.current) / stepDurationMs;
       const t = Math.max(0, Math.min(1, easeInOutCubic(tRaw)));
-
-      const a = tweenFromRef.current!;
-      const b = tweenToRef.current!;
+      const a = tweenFromRef.current!, b = tweenToRef.current!;
       const v = mode === "slerp" ? slerpUnit(a, b, t) : vecLerp(a, b, t);
       setRenderBV(v);
 
@@ -125,24 +112,17 @@ export default function HomePage() {
   function stepToNextTween() {
     if (!results || results.length === 0) return;
     const k = Math.max(0, Math.min(idx, results.length - 1));
-    if (k >= results.length - 1) {
-      setIsPlaying(false);
-      return;
-    }
+    if (k >= results.length - 1) { setIsPlaying(false); return; }
     const from = results[k].bloch_vector;
     const to = results[k + 1].bloch_vector;
-    const nextStep = workspace[k]; // transition produced by this step
+    const nextStep = workspace[k];
     const mode: "slerp" | "lerp" = nextStep?.type === "noise" ? "lerp" : "slerp";
     beginTween(from, to, mode, k);
   }
 
   function handlePlayPause() {
     if (!results || results.length <= 1) return;
-    if (isPlaying) {
-      setIsPlaying(false);
-      cancelTween();
-      return;
-    }
+    if (isPlaying) { setIsPlaying(false); cancelTween(); return; }
     if (idx >= (results?.length ?? 1) - 1) setIdx(0);
     setIsPlaying(true);
     stepToNextTween();
@@ -204,13 +184,15 @@ export default function HomePage() {
 
   /** Right-side: palette + workspace (close together for short drag) */
   const palette: PaletteItem[] = [
-    { id: 1, name: "X Gate", type: "gate", op: "X" } as Gate,
-    { id: 2, name: "Z Gate", type: "gate", op: "Z" } as Gate,
-    { id: 3, name: "H Gate", type: "gate", op: "H" } as Gate,
-    { id: 4, name: "Rx(θ)", type: "gate", op: "Rx", parameter: Math.PI / 2 } as Gate,
-    { id: 5, name: "Amplitude Damping (γ)", type: "noise", op: "amplitude_damping", parameter: 0.1 } as Noise,
-    { id: 6, name: "Phase Damping (λ)", type: "noise", op: "phase_damping", parameter: 0.1 } as Noise,
-    { id: 7, name: "Depolarizing (p)", type: "noise", op: "depolarizing", parameter: 0.05 } as Noise,
+    { id: 1, type: "gate", name: "X Gate", op: "X" } as Gate,
+    { id: 2, type: "gate", name: "Z Gate", op: "Z" } as Gate,
+    { id: 3, type: "gate", name: "H Gate", op: "H" } as Gate,
+    { id: 4, type: "gate", name: "Rx(θ)", op: "Rx", parameter: Math.PI / 2 } as Gate,
+    { id: 5, type: "gate", name: "Ry(θ)", op: "Ry", parameter: Math.PI / 2 } as Gate,
+    { id: 6, type: "gate", name: "Rz(θ)", op: "Rz", parameter: Math.PI / 2 } as Gate,
+    { id: 7, type: "noise", name: "Amplitude Damping (γ)", op: "amplitude_damping", parameter: 0.1 } as Noise,
+    { id: 8, type: "noise", name: "Phase Damping (λ)", op: "phase_damping", parameter: 0.1 } as Noise,
+    { id: 9, type: "noise", name: "Depolarizing (p)", op: "depolarizing", parameter: 0.05 } as Noise,
   ];
 
   const stepsCount = results?.length ?? 0;
@@ -219,7 +201,7 @@ export default function HomePage() {
 
   return (
     <DndProvider backend={HTML5Backend}>
-      {/* New layout: [LEFT steps] [CENTER sphere] [RIGHT palette + workspace] */}
+      {/* [LEFT steps] [CENTER sphere] [RIGHT palette + workspace] */}
       <div className="h-screen w-screen p-4 grid grid-cols-[320px_1fr_340px] gap-4"
            style={{ background: "var(--background)", color: "var(--foreground)" }}>
         {/* LEFT: Steps list */}
@@ -240,7 +222,7 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Animation duration + educational hint */}
+          {/* Animation duration + hint */}
           <div className="mt-3">
             <div className="text-xs text-zinc-400">Animation duration (per step)</div>
             <input
@@ -255,7 +237,7 @@ export default function HomePage() {
             <div className="text-xs text-zinc-400">{stepDurationMs} ms</div>
           </div>
           <div className="mt-3 text-xs text-zinc-400 leading-snug">
-            <b>Tip:</b> Gates rotate the state (arc on the sphere). Noise contracts or shifts it (straight path).
+            <b>Tip:</b> Gates rotate the state (arc). Noise contracts/shifts it (straight path).
           </div>
         </div>
 
@@ -264,39 +246,25 @@ export default function HomePage() {
           <div className="text-sm font-semibold">Bloch Sphere</div>
           <BlochSphere blochVector={renderBV} />
 
-          {/* Transport / Scrubber */}
           <div className="mt-2 p-2 bg-zinc-950/60 rounded border border-zinc-800/60">
             <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrev}
-                disabled={!results || atStart}
-                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded px-2 py-1"
-                title="Previous step"
-              >
+              <button onClick={handlePrev} disabled={!results || atStart}
+                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded px-2 py-1" title="Previous">
                 ◀
               </button>
-              <button
-                onClick={handlePlayPause}
-                disabled={!results || stepsCount <= 1}
+              <button onClick={handlePlayPause} disabled={!results || stepsCount <= 1}
                 className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded px-3 py-1"
-                title={isPlaying ? "Pause" : "Play (animate transitions)"}
-              >
+                title={isPlaying ? "Pause" : "Play (animate transitions)"}>
                 {isPlaying ? "❚❚" : "▶"}
               </button>
-              <button
-                onClick={handleNext}
-                disabled={!results || atEnd}
-                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded px-2 py-1"
-                title="Next step"
-              >
+              <button onClick={handleNext} disabled={!results || atEnd}
+                className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded px-2 py-1" title="Next">
                 ▶
               </button>
-
               <div className="ml-3 text-xs text-zinc-400">
                 {results ? `Step ${idx + 1} / ${stepsCount}` : "No results yet"}
               </div>
             </div>
-
             <input
               type="range"
               className="w-full mt-2"
@@ -308,7 +276,6 @@ export default function HomePage() {
             />
           </div>
 
-          {/* Current vector readout */}
           {results && results.length > 0 && (
             <div className="text-xs text-zinc-300">
               {renderBV ? `x=${renderBV.x.toFixed(3)}, y=${renderBV.y.toFixed(3)}, z=${renderBV.z.toFixed(3)}` : "—"}
@@ -316,7 +283,7 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* RIGHT: Palette + Run/Reset + Workspace editor (drop target) */}
+        {/* RIGHT: Palette + Run/Reset + Editor */}
         <div className="bg-zinc-900/60 p-3 rounded border border-zinc-800/60 flex flex-col gap-3">
           <div className="text-sm font-semibold">Gate & Noise Palette</div>
           <GatePalette gates={palette} />
@@ -330,16 +297,19 @@ export default function HomePage() {
             >
               {isRunning ? "Running..." : "Run"}
             </button>
-            <button
-              onClick={resetWorkspace}
-              className="bg-zinc-800 text-zinc-200 rounded px-3 py-1"
-            >
+            <button onClick={resetWorkspace} className="bg-zinc-800 text-zinc-200 rounded px-3 py-1">
               Reset
             </button>
           </div>
 
           <div className="text-sm font-semibold">Workspace Editor</div>
-          <GateEditor workspace={workspace} setWorkspace={setWorkspace} />
+          <GateEditor
+            workspace={workspace}
+            setWorkspace={setWorkspace}
+            autoRun={autoRun}
+            onToggleAutoRun={setAutoRun}
+            onNudgeForAutoRun={nudgeAutoRun}
+          />
         </div>
       </div>
     </DndProvider>
