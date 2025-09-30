@@ -6,10 +6,13 @@ import type { PaletteItem } from "../types";
 type DragPayload = { kind: "palette-item"; item: PaletteItem };
 
 function PaletteButton({ item }: { item: PaletteItem }) {
-  const [, drag] = useDrag<DragPayload, void, unknown>(() => ({
-    type: "PALETTE_ITEM",
-    item: { kind: "palette-item", item },
-  }), [item]);
+  const [, drag] = useDrag<DragPayload, void, unknown>(
+    () => ({
+      type: "PALETTE_ITEM",
+      item: { kind: "palette-item", item },
+    }),
+    [item]
+  );
 
   return (
     <div
@@ -25,7 +28,9 @@ function PaletteButton({ item }: { item: PaletteItem }) {
 export default function GatePalette({ gates }: { gates: PaletteItem[] }) {
   return (
     <div className="flex flex-col gap-2">
-      {gates.map((g) => <PaletteButton key={g.id} item={g} />)}
+      {gates.map((g) => (
+        <PaletteButton key={g.id} item={g} />
+      ))}
     </div>
   );
 }

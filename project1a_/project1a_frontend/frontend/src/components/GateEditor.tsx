@@ -2,12 +2,18 @@
 import React from "react";
 import { useDrop } from "react-dnd";
 import type {
-  CircuitStep, PaletteItem, NoiseParams, GateName, GateParams,
+  CircuitStep,
+  PaletteItem,
+  NoiseParams,
+  GateName,
+  GateParams,
 } from "../types";
 
 interface GateEditorProps {
   workspace: CircuitStep[];
-  setWorkspace: (ws: CircuitStep[] | ((prev: CircuitStep[]) => CircuitStep[])) => void;
+  setWorkspace: (
+    ws: CircuitStep[] | ((prev: CircuitStep[]) => CircuitStep[])
+  ) => void;
 
   onSelectStep?: (step: CircuitStep) => void;
   selectedId?: number | null;
@@ -20,7 +26,11 @@ interface GateEditorProps {
   onNudgeForAutoRun?: () => void;
 }
 
-const Btn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({ className = "", children, ...rest }) => (
+const Btn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
+  className = "",
+  children,
+  ...rest
+}) => (
   <button
     className={`px-1.5 py-0.5 text-[11px] rounded border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 ${className}`}
     {...rest}
@@ -39,27 +49,52 @@ function isRotationGate(name: string): name is "Rx" | "Ry" | "Rz" {
   return name === "Rx" || name === "Ry" || name === "Rz";
 }
 
-// Canonical snap set and exact labels
+// Canonical snap set and exact labels for θ
 const SNAP_SET = [
-  0, Math.PI/6, Math.PI/4, Math.PI/3, Math.PI/2,
-  (2*Math.PI)/3, (3*Math.PI)/4, (5*Math.PI)/6, Math.PI,
-  -Math.PI/6, -Math.PI/4, -Math.PI/3, -Math.PI/2, -(3*Math.PI)/4, -Math.PI,
+  0,
+  Math.PI / 6,
+  Math.PI / 4,
+  Math.PI / 3,
+  Math.PI / 2,
+  (2 * Math.PI) / 3,
+  (3 * Math.PI) / 4,
+  (5 * Math.PI) / 6,
+  Math.PI,
+  -Math.PI / 6,
+  -Math.PI / 4,
+  -Math.PI / 3,
+  -Math.PI / 2,
+  -(3 * Math.PI) / 4,
+  -Math.PI,
 ];
 
 const SNAP_LABELS: Record<number, string> = {
   [0]: "0",
-  [Math.PI/6]: "π/6", [Math.PI/4]: "π/4", [Math.PI/3]: "π/3",
-  [Math.PI/2]: "π/2", [(2*Math.PI)/3]: "2π/3", [(3*Math.PI)/4]: "3π/4", [(5*Math.PI)/6]: "5π/6",
+  [Math.PI / 6]: "π/6",
+  [Math.PI / 4]: "π/4",
+  [Math.PI / 3]: "π/3",
+  [Math.PI / 2]: "π/2",
+  [(2 * Math.PI) / 3]: "2π/3",
+  [(3 * Math.PI) / 4]: "3π/4",
+  [(5 * Math.PI) / 6]: "5π/6",
   [Math.PI]: "π",
-  [-Math.PI/6]: "-π/6", [-Math.PI/4]: "-π/4", [-Math.PI/3]: "-π/3",
-  [-Math.PI/2]: "-π/2", [-(3*Math.PI)/4]: "-3π/4", [-Math.PI]: "-π",
+  [-Math.PI / 6]: "-π/6",
+  [-Math.PI / 4]: "-π/4",
+  [-Math.PI / 3]: "-π/3",
+  [-Math.PI / 2]: "-π/2",
+  [-(3 * Math.PI) / 4]: "-3π/4",
+  [-Math.PI]: "-π",
 };
 
 function nearestSnap(theta: number) {
-  let best = SNAP_SET[0], dmin = Infinity;
+  let best = SNAP_SET[0],
+    dmin = Infinity;
   for (const v of SNAP_SET) {
     const d = Math.abs(theta - v);
-    if (d < dmin) { dmin = d; best = v; }
+    if (d < dmin) {
+      dmin = d;
+      best = v;
+    }
   }
   return { value: best, dist: dmin };
 }
@@ -67,8 +102,8 @@ function nearestSnap(theta: number) {
 function prettyTheta(theta?: number) {
   if (theta == null) return "—";
   const { value, dist } = nearestSnap(theta);
-  if (dist < 1e-6) return SNAP_LABELS[value] ?? theta.toFixed(3); // exact snapped value
-  if (dist < 0.02)  return SNAP_LABELS[value] ?? theta.toFixed(3); // near: show canonical
+  if (dist < 1e-6) return SNAP_LABELS[value] ?? theta.toFixed(3); // exactly snapped
+  if (dist < 0.02) return SNAP_LABELS[value] ?? theta.toFixed(3); // near→show canonical
   return theta.toFixed(3);
 }
 
@@ -93,24 +128,38 @@ const GateEditor: React.FC<GateEditorProps> = ({
       const id = makeId();
 
       if (it.type === "gate") {
-        // IMPORTANT: do not convert fixed gates into Rx
-        const name = it.op as GateName; // "X" | "Y" | "Z" | "H" | "Rx"
-        const theta = name.startsWith("R") ? (it.parameter ?? Math.PI / 4) : undefined;
-        const step: CircuitStep = { id, type: "gate", name, params: theta != null ? { theta } : undefined };
-        setWorkspace((prev) => [...prev, step]);
+        // Keep fixed gates fixed; only the Rotation palette item carries Rx (editable to Ry/Rz)
+        const name = it.op as GateName; // "X" | "Y" | "Z" | "H" | "Rx" | "Ry" | "Rz"
+        const theta = name.startsWith("R") ? it.parameter ?? Math.PI / 4 : undefined;
+        setWorkspace((prev) => [
+          ...prev,
+          { id, type: "gate", name, params: theta != null ? { theta } : undefined },
+        ]);
       } else {
+        // Noise defaults
         const p = it.parameter ?? 0;
         const params: NoiseParams =
-          it.op === "amplitude_damping" ? { gamma: p }
-          : it.op === "phase_damping" ? { lambda: p }
-          : { p };
-        const step: CircuitStep = { id, type: "noise", name: it.op, params };
-        setWorkspace((prev) => [...prev, step]);
+          it.op === "amplitude_damping"
+            ? { gamma: p }
+            : it.op === "phase_damping"
+            ? { lambda: p }
+            : { p };
+        setWorkspace((prev) => [
+          ...prev,
+          { id, type: "noise", name: it.op, params },
+        ]);
       }
 
       onNudgeForAutoRun?.();
     },
   }), [setWorkspace, onNudgeForAutoRun]);
+
+  const setDropRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      if (node) (drop as any)(node); // TS: connect drop to the DOM node
+    },
+    [drop]
+  );
 
   const selectStep = (s: CircuitStep) =>
     onSelectStep ? onSelectStep(s) : setLocalSelected(s.id);
@@ -127,33 +176,32 @@ const GateEditor: React.FC<GateEditorProps> = ({
     const j = idx + dir;
     if (j < 0 || j >= workspace.length) return;
 
-    const doSwap = () => {
+    const perform = () =>
       setWorkspace((prev) => {
         const arr = prev.slice();
         [arr[idx], arr[j]] = [arr[j], arr[idx]];
         return arr;
       });
-    };
-    dir === -1 ? (onMoveUp ? onMoveUp(id) : doSwap()) : (onMoveDown ? onMoveDown(id) : doSwap());
+
+    dir === -1 ? (onMoveUp ? onMoveUp(id) : perform()) : (onMoveDown ? onMoveDown(id) : perform());
     onNudgeForAutoRun?.();
   };
 
   const updateGateName = (id: number, newName: GateName) => {
-    setWorkspace((prev) => prev.map((s) => (s.id === id && s.type === "gate" ? { ...s, name: newName } : s)));
+    setWorkspace((prev) =>
+      prev.map((s) => (s.id === id && s.type === "gate" ? { ...s, name: newName } : s))
+    );
     onNudgeForAutoRun?.();
   };
 
-  // Strictly type-safe params update; we also allow "live snapping" here
+  // Live θ update with exact snapping
   const updateTheta = (id: number, rawTheta: number) => {
-    // Snap immediately to the exact canonical value if within ~2.3°
     const { value, dist } = nearestSnap(rawTheta);
-    const snapped = dist < 0.04 ? value : rawTheta;
+    const snapped = dist < 0.04 ? value : rawTheta; // write the exact constant if close
 
     setWorkspace((prev) =>
       prev.map((s) => {
-        if (s.id !== id) return s;
-        if (s.type !== "gate") return s;
-        if (!isRotationGate(s.name)) return s;
+        if (s.id !== id || s.type !== "gate" || !isRotationGate(s.name)) return s;
         const next: GateParams = { ...(s.params as GateParams), theta: snapped };
         return { ...s, params: next };
       })
@@ -161,21 +209,26 @@ const GateEditor: React.FC<GateEditorProps> = ({
     onNudgeForAutoRun?.();
   };
 
-  const setDropRef = React.useCallback((node: HTMLDivElement | null) => {
-    if (node) (drop as any)(node);
-  }, [drop]);
-
   return (
-    <div ref={setDropRef} className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h-[460px] w-full">
+    <div
+      ref={setDropRef}
+      className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h-[460px] w-full"
+    >
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold text-zinc-200">Workspace</div>
         <label className="text-[11px] flex items-center gap-2 select-none">
-          <input type="checkbox" checked={!!autoRun} onChange={(e) => onToggleAutoRun?.(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={!!autoRun}
+            onChange={(e) => onToggleAutoRun?.(e.target.checked)}
+          />
           Auto-run
         </label>
       </div>
 
-      {workspace.length === 0 && <p className="text-zinc-500">Drag gates/noise here</p>}
+      {workspace.length === 0 && (
+        <p className="text-zinc-500">Drag gates/noise here</p>
+      )}
 
       <div className="flex flex-col gap-2">
         {workspace.map((s, idx) => {
@@ -188,7 +241,9 @@ const GateEditor: React.FC<GateEditorProps> = ({
             <div
               key={s.id}
               className={`rounded px-2 py-1 transition-colors border ${
-                isSelected ? "bg-blue-600/20 border-blue-500" : "bg-zinc-800 hover:bg-zinc-700 border-transparent"
+                isSelected
+                  ? "bg-blue-600/20 border-blue-500"
+                  : "bg-zinc-800 hover:bg-zinc-700 border-transparent"
               }`}
             >
               <div
@@ -199,21 +254,28 @@ const GateEditor: React.FC<GateEditorProps> = ({
                 <span className="font-medium">
                   {isGate ? s.name : `${s.name} (noise)`}
                 </span>
-                {s.params ? <span className="text-zinc-400 text-xs">{JSON.stringify(s.params)}</span> : null}
-                <span className="ml-auto text-[10px] text-zinc-500">#{idx + 1}</span>
+                {s.params ? (
+                  <span className="text-zinc-400 text-xs">
+                    {JSON.stringify(s.params)}
+                  </span>
+                ) : null}
+                <span className="ml-auto text-[10px] text-zinc-500">
+                  #{idx + 1}
+                </span>
               </div>
 
               {isSelected && (
                 <div className="mt-2 space-y-2 text-xs">
                   {isGate && isRotationGate(s.name) && (
                     <>
-                      {/* Axis selector for the single Rotation gate */}
                       <div className="flex items-center gap-2">
                         <span className="opacity-70">Axis</span>
                         <select
                           className="bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
                           value={s.name}
-                          onChange={(e) => updateGateName(s.id, e.target.value as GateName)}
+                          onChange={(e) =>
+                            updateGateName(s.id, e.target.value as GateName)
+                          }
                         >
                           <option value="Rx">Rx</option>
                           <option value="Ry">Ry</option>
@@ -221,7 +283,6 @@ const GateEditor: React.FC<GateEditorProps> = ({
                         </select>
                       </div>
 
-                      {/* Theta slider with live snapping */}
                       <div>
                         <div className="flex items-center justify-between">
                           <span className="opacity-70">θ (radians)</span>
@@ -231,7 +292,9 @@ const GateEditor: React.FC<GateEditorProps> = ({
                                 snapped
                               </span>
                             )}
-                            <span className="tabular-nums">{prettyTheta(theta)}</span>
+                            <span className="tabular-nums">
+                              {prettyTheta(theta)}
+                            </span>
                           </div>
                         </div>
                         <input
@@ -240,7 +303,9 @@ const GateEditor: React.FC<GateEditorProps> = ({
                           max={Math.PI}
                           step={Math.PI / 180}
                           value={theta ?? 0}
-                          onChange={(e) => updateTheta(s.id, parseFloat(e.target.value))}
+                          onChange={(e) =>
+                            updateTheta(s.id, parseFloat(e.target.value))
+                          }
                           className="w-full mt-1"
                         />
                       </div>
@@ -248,9 +313,19 @@ const GateEditor: React.FC<GateEditorProps> = ({
                   )}
 
                   <div className="pt-1 flex gap-1">
-                    <Btn onClick={() => moveStep(s.id, -1)} title="Move up">↑</Btn>
-                    <Btn onClick={() => moveStep(s.id, +1)} title="Move down">↓</Btn>
-                    <Btn className="!bg-red-900 hover:!bg-red-800 border-red-700" onClick={() => removeStep(s.id)} title="Delete">✕</Btn>
+                    <Btn onClick={() => moveStep(s.id, -1)} title="Move up">
+                      ↑
+                    </Btn>
+                    <Btn onClick={() => moveStep(s.id, +1)} title="Move down">
+                      ↓
+                    </Btn>
+                    <Btn
+                      className="!bg-red-900 hover:!bg-red-800 border-red-700"
+                      onClick={() => removeStep(s.id)}
+                      title="Delete"
+                    >
+                      ✕
+                    </Btn>
                   </div>
                 </div>
               )}

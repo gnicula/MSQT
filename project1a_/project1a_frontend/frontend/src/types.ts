@@ -4,35 +4,44 @@ export type GateName = "X" | "Y" | "Z" | "H" | "Rx" | "Ry" | "Rz";
 export type NoiseName = "amplitude_damping" | "phase_damping" | "depolarizing";
 
 export type GateParams = {
-  theta?: number; // only for R* rotations
+  /** Only used for rotation gates Rx/Ry/Rz */
+  theta?: number;
 };
 
 export type NoiseParams = {
-  gamma?: number;  // amplitude_damping
-  lambda?: number; // phase_damping
-  p?: number;      // depolarizing
+  /** Amplitude Damping */
+  gamma?: number;
+  /** Phase Damping */
+  lambda?: number;
+  /** Depolarizing */
+  p?: number;
 };
 
 // Palette items you can drag from the right-hand palette
 export type Gate = {
   id: number;
   type: "gate";
-  name: string;       // display label e.g. "X Gate"
-  op: GateName;       // semantic op
-  parameter?: number; // optional default parameter for rotations
+  /** Display label e.g. "X Gate" */
+  name: string;
+  /** Semantic operation */
+  op: GateName;
+  /** Default parameter for rotations (optional) */
+  parameter?: number;
 };
 
 export type Noise = {
   id: number;
   type: "noise";
-  name: string;       // display label e.g. "Amplitude Damping (γ)"
+  /** Display label e.g. "Amplitude Damping (γ)" */
+  name: string;
   op: NoiseName;
-  parameter?: number; // default value (0..1)
+  /** Default value (0..1) */
+  parameter?: number;
 };
 
 export type PaletteItem = Gate | Noise;
 
 // What we store in the workspace editor and send to /api/run_circuit
 export type CircuitStep =
-  | { id: number; type: "gate";  name: GateName;  params?: GateParams }
+  | { id: number; type: "gate"; name: GateName; params?: GateParams }
   | { id: number; type: "noise"; name: NoiseName; params?: NoiseParams };
