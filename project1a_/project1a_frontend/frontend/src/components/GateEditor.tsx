@@ -6,6 +6,7 @@ import type {
   PaletteItem,
   NoiseParams,
   GateName,
+  GateParams,
 } from "../types";
 
 interface GateEditorProps {
@@ -73,30 +74,13 @@ function prettyTheta(theta?: number) {
 function snapTheta(theta: number) {
   const pi = Math.PI;
   const specials = [
-    0,
-    pi / 6,
-    pi / 4,
-    pi / 3,
-    pi / 2,
-    (2 * pi) / 3,
-    (3 * pi) / 4,
-    (5 * pi) / 6,
-    pi,
-    -pi / 6,
-    -pi / 4,
-    -pi / 3,
-    -pi / 2,
-    -(3 * pi) / 4,
-    -pi,
+    0, pi / 6, pi / 4, pi / 3, pi / 2, (2 * pi) / 3, (3 * pi) / 4, (5 * pi) / 6, pi,
+    -pi / 6, -pi / 4, -pi / 3, -pi / 2, -(3 * pi) / 4, -pi,
   ];
-  let best = theta,
-    bestd = Infinity;
+  let best = theta, bestd = Infinity;
   for (const v of specials) {
     const d = Math.abs(theta - v);
-    if (d < bestd) {
-      bestd = d;
-      best = v;
-    }
+    if (d < bestd) { bestd = d; best = v; }
   }
   return bestd < 0.04 ? best : theta; // ~2.3° snap window
 }
@@ -157,7 +141,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
     [setWorkspace, onNudgeForAutoRun]
   );
 
-  // Helpers (type-safe) — do not blur the union
+  // Helpers (type-safe)
   const fallbackSelect = (s: CircuitStep) => {
     if (onSelectStep) onSelectStep(s);
     else setLocalSelected(s.id);
@@ -204,13 +188,26 @@ const GateEditor: React.FC<GateEditorProps> = ({
     onNudgeForAutoRun?.();
   };
 
-  const updateParams = (id: number, params: Record<string, number>) => {
+  // Narrowed params update: only merges valid keys for the step's type
+  const updateParams = (id: number, params: Partial<GateParams> | Partial<NoiseParams>) => {
     setWorkspace((prev) =>
-      prev.map((s) =>
-        s.id === id
-          ? { ...s, params: { ...(s.params || {}), ...params } }
-          : s
-      )
+      prev.map((s) => {
+        if (s.id !== id) return s;
+
+        if (s.type === "gate") {
+          const next: GateParams = { ...(s.params as GateParams) };
+          if ("theta" in params && typeof params.theta === "number") next.theta = params.theta;
+          if ("angle" in params && typeof (params as any).angle === "number") (next as any).angle = (params as any).angle;
+          if ("Theta" in params && typeof (params as any).Theta === "number") (next as any).Theta = (params as any).Theta;
+          return { ...s, params: next };
+        } else {
+          const next: NoiseParams = { ...(s.params as NoiseParams) };
+          if ("gamma" in params && typeof (params as any).gamma === "number") next.gamma = (params as any).gamma;
+          if ("lambda" in params && typeof (params as any).lambda === "number") next.lambda = (params as any).lambda;
+          if ("p" in params && typeof (params as any).p === "number") next.p = (params as any).p;
+          return { ...s, params: next };
+        }
+      })
     );
     onNudgeForAutoRun?.();
   };
@@ -263,7 +260,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
             >
               <div
                 className="cursor-pointer flex items-center gap-2"
-                onClick={() => fallbackSelect(s)}
+                onClick={() => (onSelectStep ? onSelectStep(s) : setLocalSelected(s.id))}
                 title="Click to edit parameters"
               >
                 <span className="font-medium">
@@ -308,7 +305,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                           <div className="flex items-center justify-between">
                             <span className="opacity-70">θ (radians)</span>
                             <span className="tabular-nums">
-                              {prettyTheta(s.params?.theta)}
+                              {prettyTheta((s.params as GateParams | undefined)?.theta)}
                             </span>
                           </div>
                           <input
@@ -316,14 +313,14 @@ const GateEditor: React.FC<GateEditorProps> = ({
                             min={-Math.PI}
                             max={Math.PI}
                             step={Math.PI / 180}
-                            value={s.params?.theta ?? 0}
+                            value={(s.params as GateParams | undefined)?.theta ?? 0}
                             onChange={(e) =>
                               updateParams(s.id, {
                                 theta: parseFloat(e.target.value),
                               })
                             }
                             onMouseUp={() => {
-                              const t = s.params?.theta ?? 0;
+                              const t = (s.params as GateParams | undefined)?.theta ?? 0;
                               const snapped = snapTheta(t);
                               if (snapped !== t)
                                 updateParams(s.id, { theta: snapped });
@@ -342,7 +339,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                           <div className="flex items-center justify-between">
                             <span className="opacity-70">γ</span>
                             <span className="tabular-nums">
-                              {(s.params?.gamma ?? 0).toFixed(2)}
+                              {((s.params as NoiseParams | undefined)?.gamma ?? 0).toFixed(2)}
                             </span>
                           </div>
                           <input
@@ -350,7 +347,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                             min={0}
                             max={1}
                             step={0.01}
-                            value={s.params?.gamma ?? 0}
+                            value={(s.params as NoiseParams | undefined)?.gamma ?? 0}
                             onChange={(e) =>
                               updateParams(s.id, {
                                 gamma: parseFloat(e.target.value),
@@ -365,7 +362,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                           <div className="flex items-center justify-between">
                             <span className="opacity-70">λ</span>
                             <span className="tabular-nums">
-                              {(s.params?.lambda ?? 0).toFixed(2)}
+                              {((s.params as NoiseParams | undefined)?.lambda ?? 0).toFixed(2)}
                             </span>
                           </div>
                           <input
@@ -373,7 +370,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                             min={0}
                             max={1}
                             step={0.01}
-                            value={s.params?.lambda ?? 0}
+                            value={(s.params as NoiseParams | undefined)?.lambda ?? 0}
                             onChange={(e) =>
                               updateParams(s.id, {
                                 lambda: parseFloat(e.target.value),
@@ -388,7 +385,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                           <div className="flex items-center justify-between">
                             <span className="opacity-70">p</span>
                             <span className="tabular-nums">
-                              {(s.params?.p ?? 0).toFixed(2)}
+                              {((s.params as NoiseParams | undefined)?.p ?? 0).toFixed(2)}
                             </span>
                           </div>
                           <input
@@ -396,7 +393,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                             min={0}
                             max={1}
                             step={0.01}
-                            value={s.params?.p ?? 0}
+                            value={(s.params as NoiseParams | undefined)?.p ?? 0}
                             onChange={(e) =>
                               updateParams(s.id, {
                                 p: parseFloat(e.target.value),
