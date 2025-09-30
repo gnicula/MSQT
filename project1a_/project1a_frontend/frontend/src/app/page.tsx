@@ -12,26 +12,67 @@ type BlochVector = { x: number; y: number; z: number };
 type StepResult = { bloch_vector: BlochVector; density_matrix: number[][][] };
 type RunResponse = { steps: StepResult[] };
 
-/** Vector helpers */
+/** --- Vector helpers --- */
 function length(v: BlochVector) { return Math.hypot(v.x, v.y, v.z); }
-function normalize(v: BlochVector): BlochVector { const L = length(v) || 1; return { x: v.x / L, y: v.y / L, z: v.z / L }; }
+function normalize(v: BlochVector): BlochVector {
+  const L = length(v) || 1;
+  return { x: v.x / L, y: v.y / L, z: v.z / L };
+}
 function dot(a: BlochVector, b: BlochVector) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+function cross(a: BlochVector, b: BlochVector): BlochVector {
+  return { x: a.y*b.z - a.z*b.y, y: a.z*b.x - a.x*b.z, z: a.x*b.y - a.y*b.x };
+}
+function add(a: BlochVector, b: BlochVector): BlochVector { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; }
+function scale(v: BlochVector, s: number): BlochVector { return { x: v.x*s, y: v.y*s, z: v.z*s }; }
 function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
-function vecLerp(a: BlochVector, b: BlochVector, t: number): BlochVector { return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) }; }
+function vecLerp(a: BlochVector, b: BlochVector, t: number): BlochVector {
+  return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) };
+}
+
+/** Rodrigues rotation of vector v around unit axis k by angle t */
+function rotateAroundAxis(v: BlochVector, k: BlochVector, t: number): BlochVector {
+  const cos = Math.cos(t), sin = Math.sin(t);
+  // v' = v cos t + (k × v) sin t + k (k·v)(1 - cos t)
+  return add(add(scale(v, cos), scale(cross(k, v), sin)), scale(k, (dot(k, v)) * (1 - cos)));
+}
+
+/** Slerp on the sphere, with a deterministic path for antipodal endpoints (180°) */
 function slerpUnit(a: BlochVector, b: BlochVector, t: number): BlochVector {
   const an = normalize(a), bn = normalize(b);
-  const cosom = Math.max(-1, Math.min(1, dot(an, bn)));
+  let c = Math.max(-1, Math.min(1, dot(an, bn)));
   const EPS = 1e-6;
-  if (1 - Math.abs(cosom) < EPS) {
+
+  // If identical (or nearly), just lerp+normalize for stability
+  if (1 - Math.abs(c) < EPS && c > 0) {
     const v = vecLerp(an, bn, t);
     const L = length(v);
-    return L > EPS ? { x: v.x / L, y: v.y / L, z: v.z / L } : an;
+    return L > EPS ? scale(v, 1 / L) : an;
   }
-  const omega = Math.acos(cosom), sinom = Math.sin(omega);
-  const s0 = Math.sin((1 - t) * omega) / sinom, s1 = Math.sin(t * omega) / sinom;
-  return { x: s0 * an.x + s1 * bn.x, y: s0 * an.y + s1 * bn.y, z: s0 * an.z + s1 * bn.z };
+
+  // Antipodal case: choose a consistent perpendicular axis, then rotate along a great circle
+  if (Math.abs(c + 1) < 1e-6) {
+    // Pick axis ⟂ to 'an': try ẑ first; if colinear, use x̂
+    const zAxis: BlochVector = { x: 0, y: 0, z: 1 };
+    const xAxis: BlochVector = { x: 1, y: 0, z: 0 };
+    let k = cross(an, zAxis);
+    if (length(k) < 1e-6) k = cross(an, xAxis);
+    k = normalize(k);
+    // Total rotation is π; move from 'an' toward the antipode using t·π
+    const v = rotateAroundAxis(an, k, Math.PI * t);
+    return normalize(v);
+  }
+
+  // Regular slerp
+  const omega = Math.acos(c);
+  const sinom = Math.sin(omega);
+  const s0 = Math.sin((1 - t) * omega) / sinom;
+  const s1 = Math.sin(t * omega) / sinom;
+  return normalize({ x: s0 * an.x + s1 * bn.x, y: s0 * an.y + s1 * bn.y, z: s0 * an.z + s1 * bn.z });
 }
-function easeInOutCubic(t: number) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
+function easeInOutCubic(t: number) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
 
 export default function HomePage() {
   const [workspace, setWorkspace] = useState<CircuitStep[]>([]);
@@ -182,17 +223,15 @@ export default function HomePage() {
     }
   }
 
-  /** Right-side: palette + workspace (close together for short drag) */
+  /** Palette: single Rotation gate (default Rx), other fixed gates remain fixed unitaries */
   const palette: PaletteItem[] = [
     { id: 1, type: "gate", name: "X Gate", op: "X" } as Gate,
     { id: 2, type: "gate", name: "Z Gate", op: "Z" } as Gate,
     { id: 3, type: "gate", name: "H Gate", op: "H" } as Gate,
-    { id: 4, type: "gate", name: "Rx(θ)", op: "Rx", parameter: Math.PI / 2 } as Gate,
-    { id: 5, type: "gate", name: "Ry(θ)", op: "Ry", parameter: Math.PI / 2 } as Gate,
-    { id: 6, type: "gate", name: "Rz(θ)", op: "Rz", parameter: Math.PI / 2 } as Gate,
-    { id: 7, type: "noise", name: "Amplitude Damping (γ)", op: "amplitude_damping", parameter: 0.1 } as Noise,
-    { id: 8, type: "noise", name: "Phase Damping (λ)", op: "phase_damping", parameter: 0.1 } as Noise,
-    { id: 9, type: "noise", name: "Depolarizing (p)", op: "depolarizing", parameter: 0.05 } as Noise,
+    { id: 4, type: "gate", name: "Rotation (θ)", op: "Rx", parameter: Math.PI / 4 } as Gate, // ONE rotation gate; axis selectable in editor
+    { id: 5, type: "noise", name: "Amplitude Damping (γ)", op: "amplitude_damping", parameter: 0.1 } as Noise,
+    { id: 6, type: "noise", name: "Phase Damping (λ)", op: "phase_damping", parameter: 0.1 } as Noise,
+    { id: 7, type: "noise", name: "Depolarizing (p)", op: "depolarizing", parameter: 0.05 } as Noise,
   ];
 
   const stepsCount = results?.length ?? 0;

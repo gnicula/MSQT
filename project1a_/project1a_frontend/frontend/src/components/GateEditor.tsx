@@ -46,43 +46,38 @@ function isRotationGate(name: string): name is "Rx" | "Ry" | "Rz" {
   return name === "Rx" || name === "Ry" || name === "Rz";
 }
 
+const SNAP_SET = [
+  0, Math.PI/6, Math.PI/4, Math.PI/3, Math.PI/2, (2*Math.PI)/3, (3*Math.PI)/4, (5*Math.PI)/6, Math.PI,
+  -Math.PI/6, -Math.PI/4, -Math.PI/3, -Math.PI/2, -(3*Math.PI)/4, -Math.PI,
+];
+
+function nearestSnap(theta: number) {
+  let best = SNAP_SET[0], dmin = Infinity;
+  for (const v of SNAP_SET) {
+    const d = Math.abs(theta - v);
+    if (d < dmin) { dmin = d; best = v; }
+  }
+  return { value: best, dist: dmin };
+}
+
 function prettyTheta(theta?: number) {
   if (theta == null) return "—";
-  const pi = Math.PI;
-  const approx = (x: number) => Math.abs(x - theta) < 0.02; // ~1.1°
-  const list: Array<[number, string]> = [
-    [0, "0"],
-    [pi / 6, "π/6"],
-    [pi / 4, "π/4"],
-    [pi / 3, "π/3"],
-    [pi / 2, "π/2"],
-    [(2 * pi) / 3, "2π/3"],
-    [(3 * pi) / 4, "3π/4"],
-    [(5 * pi) / 6, "5π/6"],
-    [pi, "π"],
-    [-pi / 6, "-π/6"],
-    [-pi / 4, "-π/4"],
-    [-pi / 3, "-π/3"],
-    [-pi / 2, "-π/2"],
-    [-(3 * pi) / 4, "-3π/4"],
-    [-pi, "-π"],
-  ];
-  for (const [v, label] of list) if (approx(v)) return label;
+  const labels: Record<number, string> = {
+    [0]: "0",
+    [Math.PI/6]: "π/6", [Math.PI/4]: "π/4", [Math.PI/3]: "π/3",
+    [Math.PI/2]: "π/2", [(2*Math.PI)/3]: "2π/3", [(3*Math.PI)/4]: "3π/4", [(5*Math.PI)/6]: "5π/6",
+    [Math.PI]: "π",
+    [-Math.PI/6]: "-π/6", [-Math.PI/4]: "-π/4", [-Math.PI/3]: "-π/3",
+    [-Math.PI/2]: "-π/2", [-(3*Math.PI)/4]: "-3π/4", [-Math.PI]: "-π",
+  };
+  const { value, dist } = nearestSnap(theta);
+  if (dist < 0.02) return labels[value] ?? theta.toFixed(3);
   return theta.toFixed(3);
 }
 
 function snapTheta(theta: number) {
-  const pi = Math.PI;
-  const specials = [
-    0, pi / 6, pi / 4, pi / 3, pi / 2, (2 * pi) / 3, (3 * pi) / 4, (5 * pi) / 6, pi,
-    -pi / 6, -pi / 4, -pi / 3, -pi / 2, -(3 * pi) / 4, -pi,
-  ];
-  let best = theta, bestd = Infinity;
-  for (const v of specials) {
-    const d = Math.abs(theta - v);
-    if (d < bestd) { bestd = d; best = v; }
-  }
-  return bestd < 0.04 ? best : theta; // ~2.3° snap window
+  const { value, dist } = nearestSnap(theta);
+  return dist < 0.04 ? value : theta;
 }
 
 const GateEditor: React.FC<GateEditorProps> = ({
@@ -109,12 +104,14 @@ const GateEditor: React.FC<GateEditorProps> = ({
         const id = makeId();
 
         if (it.type === "gate") {
-          const theta =
-            it.parameter ?? (it.op.startsWith("R") ? Math.PI / 2 : undefined);
+          // For a single palette "Rotation (θ)" we default to Rx and allow changing axis below.
+          const theta = it.parameter ?? (it.op.startsWith("R") ? Math.PI / 4 : undefined);
+          const name: GateName =
+            it.op === "Rx" || it.op === "Ry" || it.op === "Rz" ? it.op : "Rx";
           const step: CircuitStep = {
             id,
             type: "gate",
-            name: it.op, // "X" | "Y" | "Z" | "H" | "Rx" | "Ry" | "Rz"
+            name,
             params: theta != null ? { theta } : undefined,
           };
           setWorkspace((prev) => [...prev, step]);
@@ -129,7 +126,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
           const step: CircuitStep = {
             id,
             type: "noise",
-            name: it.op, // "amplitude_damping" | "phase_damping" | "depolarizing"
+            name: it.op,
             params,
           };
           setWorkspace((prev) => [...prev, step]);
@@ -188,7 +185,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
     onNudgeForAutoRun?.();
   };
 
-  // Narrowed params update: only merges valid keys for the step's type
+  // Narrowed params update by step type
   const updateParams = (id: number, params: Partial<GateParams> | Partial<NoiseParams>) => {
     setWorkspace((prev) =>
       prev.map((s) => {
@@ -197,8 +194,6 @@ const GateEditor: React.FC<GateEditorProps> = ({
         if (s.type === "gate") {
           const next: GateParams = { ...(s.params as GateParams) };
           if ("theta" in params && typeof params.theta === "number") next.theta = params.theta;
-          if ("angle" in params && typeof (params as any).angle === "number") (next as any).angle = (params as any).angle;
-          if ("Theta" in params && typeof (params as any).Theta === "number") (next as any).Theta = (params as any).Theta;
           return { ...s, params: next };
         } else {
           const next: NoiseParams = { ...(s.params as NoiseParams) };
@@ -214,34 +209,21 @@ const GateEditor: React.FC<GateEditorProps> = ({
 
   // Use a callback ref to attach the drop connector
   const setDropRef = React.useCallback(
-    (node: HTMLDivElement | null) => {
-      if (node) {
-        (drop as any)(node);
-      }
-    },
+    (node: HTMLDivElement | null) => { if (node) (drop as any)(node); },
     [drop]
   );
 
   return (
-    <div
-      ref={setDropRef}
-      className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h-[260px] w-full"
-    >
+    <div ref={setDropRef} className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h={[260]} w-full">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold text-zinc-200">Workspace</div>
         <label className="text-[11px] flex items-center gap-2 select-none">
-          <input
-            type="checkbox"
-            checked={!!autoRun}
-            onChange={(e) => onToggleAutoRun?.(e.target.checked)}
-          />
+          <input type="checkbox" checked={!!autoRun} onChange={(e) => onToggleAutoRun?.(e.target.checked)} />
           Auto-run
         </label>
       </div>
 
-      {workspace.length === 0 && (
-        <p className="text-zinc-500">Drag gates/noise here</p>
-      )}
+      {workspace.length === 0 && <p className="text-zinc-500">Drag gates/noise here</p>}
 
       <div className="flex flex-col gap-2">
         {workspace.map((s, idx) => {
@@ -249,48 +231,42 @@ const GateEditor: React.FC<GateEditorProps> = ({
           const isGate = s.type === "gate";
           const isNoise = s.type === "noise";
 
+          // Snap indicator state (for rotation gate only)
+          const theta = isGate ? (s.params as GateParams | undefined)?.theta : undefined;
+          const nearSnap = typeof theta === "number" && nearestSnap(theta).dist < 0.02;
+
           return (
             <div
               key={s.id}
               className={`rounded px-2 py-1 transition-colors border ${
-                isSelected
-                  ? "bg-blue-600/20 border-blue-500"
-                  : "bg-zinc-800 hover:bg-zinc-700 border-transparent"
+                isSelected ? "bg-blue-600/20 border-blue-500" : "bg-zinc-800 hover:bg-zinc-700 border-transparent"
               }`}
             >
               <div
                 className="cursor-pointer flex items-center gap-2"
-                onClick={() => (onSelectStep ? onSelectStep(s) : setLocalSelected(s.id))}
+                onClick={() => (onSelectStep ? onSelectStep(s) : (setLocalSelected(s.id)))}
                 title="Click to edit parameters"
               >
                 <span className="font-medium">
                   {isGate ? s.name : `${s.name} (noise)`}
                 </span>
-                {s.params ? (
-                  <span className="text-zinc-400 text-xs">
-                    {JSON.stringify(s.params)}
-                  </span>
-                ) : null}
-                <span className="ml-auto text-[10px] text-zinc-500">
-                  #{idx + 1}
-                </span>
+                {s.params ? <span className="text-zinc-400 text-xs">{JSON.stringify(s.params)}</span> : null}
+                <span className="ml-auto text-[10px] text-zinc-500">#{idx + 1}</span>
               </div>
 
-              {/* Inline controls for the selected step */}
+              {/* Inline controls */}
               {isSelected && (
                 <div className="mt-2 space-y-2 text-xs">
                   {isGate && (
                     <>
-                      {/* Rotation axis if applicable */}
+                      {/* Rotation axis selector for rotation gates */}
                       {isRotationGate(s.name) && (
                         <div className="flex items-center gap-2">
                           <span className="opacity-70">Axis</span>
                           <select
                             className="bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
                             value={s.name}
-                            onChange={(e) =>
-                              updateGateName(s.id, e.target.value as GateName)
-                            }
+                            onChange={(e) => updateGateName(s.id, e.target.value as GateName)}
                           >
                             <option value="Rx">Rx</option>
                             <option value="Ry">Ry</option>
@@ -304,31 +280,32 @@ const GateEditor: React.FC<GateEditorProps> = ({
                         <div>
                           <div className="flex items-center justify-between">
                             <span className="opacity-70">θ (radians)</span>
-                            <span className="tabular-nums">
-                              {prettyTheta((s.params as GateParams | undefined)?.theta)}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              {nearSnap && (
+                                <span className="px-1 py-0.5 rounded bg-emerald-700/40 border border-emerald-500 text-emerald-100">
+                                  snapped
+                                </span>
+                              )}
+                              <span className="tabular-nums">{prettyTheta(theta)}</span>
+                            </div>
                           </div>
                           <input
                             type="range"
                             min={-Math.PI}
                             max={Math.PI}
                             step={Math.PI / 180}
-                            value={(s.params as GateParams | undefined)?.theta ?? 0}
-                            onChange={(e) =>
-                              updateParams(s.id, {
-                                theta: parseFloat(e.target.value),
-                              })
-                            }
+                            value={theta ?? 0}
+                            onChange={(e) => updateParams(s.id, { theta: parseFloat(e.target.value) })}
                             onMouseUp={() => {
                               const t = (s.params as GateParams | undefined)?.theta ?? 0;
                               const snapped = snapTheta(t);
-                              if (snapped !== t)
-                                updateParams(s.id, { theta: snapped });
+                              if (snapped !== t) updateParams(s.id, { theta: snapped });
                             }}
                             className="w-full mt-1"
                           />
                         </div>
                       )}
+                      {/* Fixed gates (X,Y,Z,H) intentionally have no θ; extra scalar/global phase doesn't move the Bloch vector */}
                     </>
                   )}
 
@@ -338,21 +315,12 @@ const GateEditor: React.FC<GateEditorProps> = ({
                         <div>
                           <div className="flex items-center justify-between">
                             <span className="opacity-70">γ</span>
-                            <span className="tabular-nums">
-                              {((s.params as NoiseParams | undefined)?.gamma ?? 0).toFixed(2)}
-                            </span>
+                            <span className="tabular-nums">{((s.params as NoiseParams | undefined)?.gamma ?? 0).toFixed(2)}</span>
                           </div>
                           <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.01}
+                            type="range" min={0} max={1} step={0.01}
                             value={(s.params as NoiseParams | undefined)?.gamma ?? 0}
-                            onChange={(e) =>
-                              updateParams(s.id, {
-                                gamma: parseFloat(e.target.value),
-                              })
-                            }
+                            onChange={(e) => updateParams(s.id, { gamma: parseFloat(e.target.value) })}
                             className="w-full mt-1"
                           />
                         </div>
@@ -361,21 +329,12 @@ const GateEditor: React.FC<GateEditorProps> = ({
                         <div>
                           <div className="flex items-center justify-between">
                             <span className="opacity-70">λ</span>
-                            <span className="tabular-nums">
-                              {((s.params as NoiseParams | undefined)?.lambda ?? 0).toFixed(2)}
-                            </span>
+                            <span className="tabular-nums">{((s.params as NoiseParams | undefined)?.lambda ?? 0).toFixed(2)}</span>
                           </div>
                           <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.01}
+                            type="range" min={0} max={1} step={0.01}
                             value={(s.params as NoiseParams | undefined)?.lambda ?? 0}
-                            onChange={(e) =>
-                              updateParams(s.id, {
-                                lambda: parseFloat(e.target.value),
-                              })
-                            }
+                            onChange={(e) => updateParams(s.id, { lambda: parseFloat(e.target.value) })}
                             className="w-full mt-1"
                           />
                         </div>
@@ -384,21 +343,12 @@ const GateEditor: React.FC<GateEditorProps> = ({
                         <div>
                           <div className="flex items-center justify-between">
                             <span className="opacity-70">p</span>
-                            <span className="tabular-nums">
-                              {((s.params as NoiseParams | undefined)?.p ?? 0).toFixed(2)}
-                            </span>
+                            <span className="tabular-nums">{((s.params as NoiseParams | undefined)?.p ?? 0).toFixed(2)}</span>
                           </div>
                           <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.01}
+                            type="range" min={0} max={1} step={0.01}
                             value={(s.params as NoiseParams | undefined)?.p ?? 0}
-                            onChange={(e) =>
-                              updateParams(s.id, {
-                                p: parseFloat(e.target.value),
-                              })
-                            }
+                            onChange={(e) => updateParams(s.id, { p: parseFloat(e.target.value) })}
                             className="w-full mt-1"
                           />
                         </div>
@@ -407,19 +357,9 @@ const GateEditor: React.FC<GateEditorProps> = ({
                   )}
 
                   <div className="pt-1 flex gap-1">
-                    <Btn onClick={() => fallbackMove(s.id, -1)} title="Move up">
-                      ↑
-                    </Btn>
-                    <Btn onClick={() => fallbackMove(s.id, +1)} title="Move down">
-                      ↓
-                    </Btn>
-                    <Btn
-                      className="!bg-red-900 hover:!bg-red-800 border-red-700"
-                      onClick={() => fallbackDelete(s.id)}
-                      title="Delete"
-                    >
-                      ✕
-                    </Btn>
+                    <Btn onClick={() => fallbackMove(s.id, -1)} title="Move up">↑</Btn>
+                    <Btn onClick={() => fallbackMove(s.id, +1)} title="Move down">↓</Btn>
+                    <Btn className="!bg-red-900 hover:!bg-red-800 border-red-700" onClick={() => fallbackDelete(s.id)} title="Delete">✕</Btn>
                   </div>
                 </div>
               )}
