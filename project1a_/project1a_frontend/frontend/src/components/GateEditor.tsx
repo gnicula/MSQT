@@ -28,7 +28,7 @@ function makeId() {
 
 type DragPayload = {
   kind: "palette-item";
-  item: PaletteItem; // can be a gate or a noise item
+  item: PaletteItem; // gate or noise
 };
 
 const GateEditor: React.FC<GateEditorProps> = ({
@@ -47,7 +47,6 @@ const GateEditor: React.FC<GateEditorProps> = ({
       const id = makeId();
 
       if (it.type === "gate") {
-        // Gate palette item -> CircuitStep (unitary)
         const theta = it.parameter ?? (it.op.startsWith("R") ? Math.PI / 2 : undefined);
         const step: CircuitStep = {
           id,
@@ -57,7 +56,6 @@ const GateEditor: React.FC<GateEditorProps> = ({
         };
         setWorkspace((prev) => [...prev, step]);
       } else {
-        // Noise palette item -> CircuitStep (channel)
         const p = it.parameter ?? 0;
         const params: NoiseParams =
           it.op === "amplitude_damping"
@@ -76,11 +74,15 @@ const GateEditor: React.FC<GateEditorProps> = ({
     },
   }), [setWorkspace]);
 
+  // Use a callback ref to attach the drop connector without casting/comment issues
+  const setDropRef = React.useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      (drop as any)(node);
+    }
+  }, [drop]);
+
   return (
-    <div
-      ref={drop as unknown as React.LegacyRef<HTMLDivElement>}  {/* <-- TS fix: cast connector to ref */}
-      className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h-[240px] w-full"
-    >
+    <div ref={setDropRef} className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h-[240px] w-full">
       <div className="text-sm font-semibold text-zinc-200 mb-2">Workspace</div>
       {workspace.length === 0 && <p className="text-zinc-500">Drag gates/noise here</p>}
       <div className="flex flex-col gap-2">
@@ -104,9 +106,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                   {s.type === "gate" ? s.name : `${s.name} (noise)`}
                 </span>{" "}
                 {s.params ? (
-                  <span className="text-zinc-400 text-xs">
-                    {JSON.stringify(s.params)}
-                  </span>
+                  <span className="text-zinc-400 text-xs">{JSON.stringify(s.params)}</span>
                 ) : null}
               </div>
               <div className="mt-1 flex gap-1">
