@@ -19,6 +19,10 @@ export type Noise = {
   parameter?: number; // e.g., gamma/lambda/p
 };
 
+/** What the palette shows on the right */
+export type PaletteItem = Gate | Noise;
+
+/** What the workspace editor holds and what we send to /api/run_circuit */
 export type CircuitStep =
   | {
       id: number;

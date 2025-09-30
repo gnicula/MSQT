@@ -6,7 +6,7 @@ import { HTML5Backend } from "react-dnd-html5-backend";
 import BlochSphere from "../components/BlochSphere";
 import GatePalette from "../components/GatePalette";
 import GateEditor from "../components/GateEditor";
-import type { CircuitStep, Gate } from "../types";
+import type { CircuitStep, Gate, Noise, PaletteItem } from "../types";
 
 type BlochVector = { x: number; y: number; z: number };
 type StepResult = { bloch_vector: BlochVector; density_matrix: number[][][] };
@@ -203,14 +203,14 @@ export default function HomePage() {
   }
 
   /** Right-side: palette + workspace (close together for short drag) */
-  const palette: Gate[] = [
-    { id: 1, name: "X Gate", type: "gate", op: "X" },
-    { id: 2, name: "Z Gate", type: "gate", op: "Z" },
-    { id: 3, name: "H Gate", type: "gate", op: "H" },
-    { id: 4, name: "Rx(θ)", type: "gate", op: "Rx", parameter: Math.PI / 2 }, // FIX: use Rx, not "R"
-    { id: 5, name: "Amplitude Damping (γ)", type: "noise", op: "amplitude_damping", parameter: 0.1 },
-    { id: 6, name: "Phase Damping (λ)", type: "noise", op: "phase_damping", parameter: 0.1 },
-    { id: 7, name: "Depolarizing (p)", type: "noise", op: "depolarizing", parameter: 0.05 },
+  const palette: PaletteItem[] = [
+    { id: 1, name: "X Gate", type: "gate", op: "X" } as Gate,
+    { id: 2, name: "Z Gate", type: "gate", op: "Z" } as Gate,
+    { id: 3, name: "H Gate", type: "gate", op: "H" } as Gate,
+    { id: 4, name: "Rx(θ)", type: "gate", op: "Rx", parameter: Math.PI / 2 } as Gate,
+    { id: 5, name: "Amplitude Damping (γ)", type: "noise", op: "amplitude_damping", parameter: 0.1 } as Noise,
+    { id: 6, name: "Phase Damping (λ)", type: "noise", op: "phase_damping", parameter: 0.1 } as Noise,
+    { id: 7, name: "Depolarizing (p)", type: "noise", op: "depolarizing", parameter: 0.05 } as Noise,
   ];
 
   const stepsCount = results?.length ?? 0;
@@ -222,7 +222,7 @@ export default function HomePage() {
       {/* New layout: [LEFT steps] [CENTER sphere] [RIGHT palette + workspace] */}
       <div className="h-screen w-screen p-4 grid grid-cols-[320px_1fr_340px] gap-4"
            style={{ background: "var(--background)", color: "var(--foreground)" }}>
-        {/* LEFT: Steps list (was Palette before) */}
+        {/* LEFT: Steps list */}
         <div className="bg-zinc-900/60 p-3 rounded border border-zinc-800/60 flex flex-col">
           <div className="text-sm font-semibold">Steps</div>
           <div className="mt-2 flex-1 overflow-auto space-y-2">
@@ -318,7 +318,7 @@ export default function HomePage() {
 
         {/* RIGHT: Palette + Run/Reset + Workspace editor (drop target) */}
         <div className="bg-zinc-900/60 p-3 rounded border border-zinc-800/60 flex flex-col gap-3">
-          <div className="text-sm font-semibold">Gate Palette</div>
+          <div className="text-sm font-semibold">Gate & Noise Palette</div>
           <GatePalette gates={palette} />
 
           <div className="flex gap-2">
