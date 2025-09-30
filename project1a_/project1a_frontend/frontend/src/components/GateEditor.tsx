@@ -77,7 +77,10 @@ const GateEditor: React.FC<GateEditorProps> = ({
   }), [setWorkspace]);
 
   return (
-    <div ref={drop} className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h-[240px] w-full">
+    <div
+      ref={drop as unknown as React.LegacyRef<HTMLDivElement>}  {/* <-- TS fix: cast connector to ref */}
+      className="p-3 bg-zinc-900 rounded border border-zinc-700 min-h-[240px] w-full"
+    >
       <div className="text-sm font-semibold text-zinc-200 mb-2">Workspace</div>
       {workspace.length === 0 && <p className="text-zinc-500">Drag gates/noise here</p>}
       <div className="flex flex-col gap-2">
