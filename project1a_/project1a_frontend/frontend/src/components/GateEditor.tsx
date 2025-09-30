@@ -1,3 +1,6 @@
+// scr/component
+// GateEditor.tsx
+
 "use client";
 import React from "react";
 import { useDrop } from "react-dnd";
@@ -10,6 +13,16 @@ import type {
   NoiseName,
 } from "../types";
 
+/* ===========================================================
+   Props
+   -----------------------------------------------------------
+   - workspace / setWorkspace: the ordered list of steps (gate/noise)
+   - onSelectStep / selectedId: optional external selection control
+   - onMoveUp / onMoveDown / onDelete: optional external mutations
+   - autoRun / onToggleAutoRun / onNudgeForAutoRun:
+       * autoRun toggles whether the parent should auto-run on edits
+       * onNudgeForAutoRun() asks the parent to debounce/run soon
+   =========================================================== */
 interface GateEditorProps {
   workspace: CircuitStep[];
   setWorkspace: (
@@ -27,6 +40,7 @@ interface GateEditorProps {
   onNudgeForAutoRun?: () => void;
 }
 
+/* Small utility button used in the inline controls for each step. */
 const Btn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
   className = "",
   children,
@@ -40,17 +54,24 @@ const Btn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
   </button>
 );
 
+/* Generate a reasonably unique id. Combines timestamp and a random suffix. */
 function makeId() {
   return Number(`${Date.now()}${Math.floor(Math.random() * 1e6)}`);
 }
 
+/* Payload type accepted by react-dnd from the palette. */
 type DragPayload = { kind: "palette-item"; item: PaletteItem };
 
+/* Type guard to check if a gate name is a rotation (parameterized). */
 function isRotationGate(name: string): name is "Rx" | "Ry" | "Rz" {
   return name === "Rx" || name === "Ry" || name === "Rz";
 }
 
-/** ---- θ snapping helpers (write exact constants when near special angles) ---- */
+/** ---- θ snapping helpers (write exact constants when near special angles) ----
+ * We expose a set of “special” angles on the unit circle (in radians).
+ * When the user drags the θ slider near one of these, we snap exactly
+ * to the constant to keep outputs clean (e.g., show π/2 instead of 1.571).
+ */
 const SNAP_SET = [
   0,
   Math.PI / 6,
@@ -69,6 +90,7 @@ const SNAP_SET = [
   -Math.PI,
 ] as const;
 
+/* Labels for displaying pretty π-based values in the UI. */
 const SNAP_LABELS: Record<number, string> = {
   [0]: "0",
   [Math.PI / 6]: "π/6",
@@ -87,6 +109,7 @@ const SNAP_LABELS: Record<number, string> = {
   [-Math.PI]: "-π",
 };
 
+/* Find the nearest snap angle to a given θ, returning the value and distance. */
 function nearestSnap(theta: number) {
   let best = SNAP_SET[0] as number,
     dmin = Infinity;
@@ -100,6 +123,9 @@ function nearestSnap(theta: number) {
   return { value: best, dist: dmin };
 }
 
+/* Pretty-print θ:
+   - If we’re very close to a snap angle, show its π-based label
+   - Else show a numeric with fixed precision */
 function prettyTheta(theta?: number) {
   if (theta == null) return "—";
   const { value, dist } = nearestSnap(theta);
@@ -109,6 +135,18 @@ function prettyTheta(theta?: number) {
 }
 /** --------------------------------------------------------------------------- */
 
+/* ===========================================================
+   GateEditor component
+   -----------------------------------------------------------
+   Responsibilities:
+   - Accept “palette item” drops and append steps to workspace.
+   - Render each step with context-appropriate controls:
+       * Rotation gates: axis selector + θ slider (with snapping)
+       * Noise steps: one slider in [0,1] for its strength
+   - Provide move-up / move-down / delete actions per step.
+   - Support external selection, or maintain local selection when
+     no external handler is provided.
+   =========================================================== */
 const GateEditor: React.FC<GateEditorProps> = ({
   workspace,
   setWorkspace,
@@ -121,9 +159,13 @@ const GateEditor: React.FC<GateEditorProps> = ({
   onToggleAutoRun,
   onNudgeForAutoRun,
 }) => {
+  /* Local fallback selection if parent doesn’t manage selection. */
   const [localSelected, setLocalSelected] = React.useState<number | null>(null);
 
-  // react-dnd drop target with ref connector (avoids LegacyRef typing issues)
+  /* ----------------------- Drag & Drop target -----------------------
+     We define a drop zone that accepts "PALETTE_ITEM" payloads
+     and appends a corresponding step to the workspace.
+     ----------------------------------------------------------------- */
   const dropRef = React.useRef<HTMLDivElement | null>(null);
   const [, drop] = useDrop<DragPayload, void>(() => ({
     accept: "PALETTE_ITEM",
@@ -132,7 +174,8 @@ const GateEditor: React.FC<GateEditorProps> = ({
       const id = makeId();
 
       if (it.type === "gate") {
-        // Keep fixed gates fixed; only "Rotation (θ)" palette item arrives with op "Rx".
+        // Fixed gates have no params; rotation gates default θ if not present.
+        // Palette sends "Rotation (θ)" with op "Rx" (axis is editable later).
         const name = it.op as GateName; // "X" | "Y" | "Z" | "H" | "Rx" | "Ry" | "Rz"
         const theta = name.startsWith("R") ? it.parameter ?? Math.PI / 4 : undefined;
         setWorkspace((prev) => [
@@ -140,7 +183,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
           { id, type: "gate", name, params: theta != null ? { theta } : undefined },
         ]);
       } else {
-        // Noise defaults
+        // Noise channels map their single parameter into the right key.
         const p = it.parameter ?? 0.1;
         const params: NoiseParams =
           it.op === "amplitude_damping"
@@ -154,25 +197,36 @@ const GateEditor: React.FC<GateEditorProps> = ({
         ]);
       }
 
+      // Ask parent to consider re-running (debounced upstream).
       onNudgeForAutoRun?.();
     },
   }), [setWorkspace, onNudgeForAutoRun]);
 
+  /* Connect the ref to the drop target (avoids LegacyRef typing issues). */
   React.useEffect(() => {
     if (dropRef.current) {
       (drop as any)(dropRef);
     }
   }, [drop]);
 
+  /* Selection helper:
+     - Use external callback if provided
+     - Otherwise maintain a local selection id */
   const selectStep = (s: CircuitStep) =>
     onSelectStep ? onSelectStep(s) : setLocalSelected(s.id);
 
+  /* Removal helper:
+     - Delegate to parent if onDelete provided
+     - Else mutate workspace locally
+     - Nudge auto-run after mutation */
   const removeStep = (id: number) => {
     if (onDelete) onDelete(id);
     else setWorkspace((prev) => prev.filter((x) => x.id !== id));
     onNudgeForAutoRun?.();
   };
 
+  /* Move a step up/down one position (or delegate to parent).
+     Performs bounds checks; nudges auto-run on change. */
   const moveStep = (id: number, dir: -1 | 1) => {
     const idx = workspace.findIndex((x) => x.id === id);
     if (idx < 0) return;
@@ -190,6 +244,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
     onNudgeForAutoRun?.();
   };
 
+  /* Update a gate’s name (used to switch Rx/Ry/Rz axis). */
   const updateGateName = (id: number, newName: GateName) => {
     setWorkspace((prev) =>
       prev.map((s) => (s.id === id && s.type === "gate" ? { ...s, name: newName } : s))
@@ -197,7 +252,9 @@ const GateEditor: React.FC<GateEditorProps> = ({
     onNudgeForAutoRun?.();
   };
 
-  // θ update with exact snapping
+  /* Update θ with snapping:
+     - If raw value is near a snap angle (≤ ~0.04), write exact constant.
+     - Keeps the UI pretty and avoids floating point drift. */
   const updateTheta = (id: number, rawTheta: number) => {
     const { value, dist } = nearestSnap(rawTheta);
     const snapped = dist < 0.04 ? value : rawTheta;
@@ -211,7 +268,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
     onNudgeForAutoRun?.();
   };
 
-  // Noise updates
+  /* Update a noise parameter (all in [0,1]): gamma, lambda, or p. */
   const updateNoiseParam = (
     id: number,
     key: keyof NoiseParams, // "gamma" | "lambda" | "p"
@@ -227,8 +284,19 @@ const GateEditor: React.FC<GateEditorProps> = ({
     onNudgeForAutoRun?.();
   };
 
+  /* Which step is currently selected (external id wins over local). */
   const selectedKey = selectedId ?? localSelected;
 
+  /* ===========================================================
+     Render
+     -----------------------------------------------------------
+     - Drop zone region (entire component) accepts palette items.
+     - List of steps with number badges (#1, #2...) for context.
+     - Conditional editor sections per step type:
+         * Gate → axis selector (for rotations) + θ slider
+         * Noise → single slider for γ / λ / p in [0,1]
+     - Move up/down and delete controls appear when selected.
+     =========================================================== */
   return (
     <div
       ref={dropRef}
@@ -254,6 +322,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
         {workspace.map((s, idx) => {
           const isSelected = s.id === selectedKey;
 
+          /* ------- Gate controls (axis + θ) appear only for rotation gates ------- */
           const renderGateControls = () => {
             if (s.type !== "gate") return null;
             const isRot = isRotationGate(s.name);
@@ -264,6 +333,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
               <div className="mt-2 space-y-2 text-xs">
                 {isRot && (
                   <>
+                    {/* Axis selector: switch between Rx/Ry/Rz (keeps θ) */}
                     <div className="flex items-center gap-2">
                       <span className="opacity-70">Axis</span>
                       <select
@@ -279,6 +349,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                       </select>
                     </div>
 
+                    {/* θ slider (radians) with snap indicator + pretty label */}
                     <div>
                       <div className="flex items-center justify-between">
                         <span className="opacity-70">θ (radians)</span>
@@ -311,12 +382,13 @@ const GateEditor: React.FC<GateEditorProps> = ({
             );
           };
 
+          /* ------- Noise controls (single [0,1] slider) ------- */
           const renderNoiseControls = () => {
             if (s.type !== "noise") return null;
             const name = s.name as NoiseName;
             const params: NoiseParams = (s.params as NoiseParams) || {};
 
-            // A single slider per noise op (all in [0,1])
+            // Generic row factory for γ/λ/p sliders
             const sliderRow = (
               label: string,
               key: keyof NoiseParams,
@@ -350,6 +422,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
             );
           };
 
+          /* ------- Step row (selectable; shows controls when selected) ------- */
           return (
             <div
               key={s.id}
@@ -382,6 +455,7 @@ const GateEditor: React.FC<GateEditorProps> = ({
                   {renderGateControls()}
                   {renderNoiseControls()}
 
+                  {/* Row actions: move up/down, delete */}
                   <div className="pt-2 flex gap-1">
                     <Btn onClick={() => moveStep(s.id, -1)} title="Move up">
                       ↑

@@ -7,11 +7,26 @@ interface CircuitBuilderProps {
   onUpdate: (blochVector: any, densityMatrix: any) => void;
 }
 
+/* ===========================================================
+   CircuitBuilder
+   -----------------------------------------------------------
+   Lightweight “quick runner” widget:
+   - Lets the user enqueue a few gates/noise steps.
+   - Calls POST /api/run_circuit and surfaces the LAST state
+     (Bloch vector + density matrix) via onUpdate(...).
+   - Useful for smoke tests and simple demos outside the full
+     palette/editor workflow.
+   =========================================================== */
 export default function CircuitBuilder({ onUpdate }: CircuitBuilderProps) {
+  // Local list of steps to execute
   const [steps, setSteps] = useState<CircuitStep[]>([]);
+  // UI state for request lifecycle and error display
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /* ---------------------------------------------------------
+     Mutators for the local step list
+     --------------------------------------------------------- */
   function addStep(step: CircuitStep) {
     setSteps((prev) => [...prev, step]);
   }
@@ -21,6 +36,13 @@ export default function CircuitBuilder({ onUpdate }: CircuitBuilderProps) {
     setError(null);
   }
 
+  /* ---------------------------------------------------------
+     Run the circuit through the API:
+       - POST /api/run_circuit with { steps }
+       - On success, take the final step’s state (last frame)
+         and forward it to parent via onUpdate(...).
+       - Errors are surfaced inline.
+     --------------------------------------------------------- */
   async function runCircuit() {
     if (steps.length === 0) return;
     setRunning(true);
@@ -34,10 +56,11 @@ export default function CircuitBuilder({ onUpdate }: CircuitBuilderProps) {
       });
 
       if (!res.ok) {
-        const msg = await safeText(res);
+        const msg = await safeText(res); // try to extract message body safely
         throw new Error(`API ${res.status}: ${msg || "Unknown error"}`);
       }
 
+      // Shape matches RunResponse = { steps: StepResult[] }
       const data = await res.json();
       const last = data?.steps?.[data.steps.length - 1];
       if (last) onUpdate(last.bloch_vector, last.density_matrix);
@@ -48,6 +71,13 @@ export default function CircuitBuilder({ onUpdate }: CircuitBuilderProps) {
     }
   }
 
+  /* ---------------------------------------------------------
+     Render
+     ---------------------------------------------------------
+     - Button strip to append common gates/noise with defaults.
+     - Run/Clear controls with inline error label.
+     - Simple list of queued steps for visibility.
+     --------------------------------------------------------- */
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
@@ -126,6 +156,7 @@ export default function CircuitBuilder({ onUpdate }: CircuitBuilderProps) {
         <button className="bg-zinc-800 rounded px-3 py-1" onClick={clearSteps}>
           Clear
         </button>
+        {/* Inline error label mirrors API failure state */}
         {error && <span className="text-xs text-red-400">Error: {error}</span>}
       </div>
 
@@ -146,6 +177,13 @@ export default function CircuitBuilder({ onUpdate }: CircuitBuilderProps) {
   );
 }
 
+/* ===========================================================
+   safeText
+   -----------------------------------------------------------
+   Defensive helper to read a Response body as text.
+   Some error responses may have already-consumed bodies,
+   or no body at all; we swallow failures and return "".
+   =========================================================== */
 async function safeText(res: Response) {
   try {
     return await res.text();

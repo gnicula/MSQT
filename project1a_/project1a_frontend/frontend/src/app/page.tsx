@@ -8,11 +8,27 @@ import GatePalette from "../components/GatePalette";
 import GateEditor from "../components/GateEditor";
 import type { CircuitStep, Gate, Noise, PaletteItem } from "../types";
 
+/* ===========================================================
+   Types
+   -----------------------------------------------------------
+   Mirror the API response format for Bloch vectors and
+   density matrices so the UI can render results consistently.
+   =========================================================== */
 type BlochVector = { x: number; y: number; z: number };
 type StepResult = { bloch_vector: BlochVector; density_matrix: number[][][] };
 type RunResponse = { steps: StepResult[] };
 
-/** ---------- vector helpers & slerp ---------- */
+/* ===========================================================
+   Vector helpers & slerp
+   -----------------------------------------------------------
+   - length/normalize/dot/cross/add/scale: minimal 3D vector ops
+   - vecLerp: linear interpolation in ℝ³
+   - rotateAroundAxis: Rodrigues’ rotation formula
+   - slerpUnit: spherical interpolation on S² (unit sphere)
+       * Handles near-identical endpoints via lerp fallback
+       * Handles antipodal (180°) cases by selecting a stable axis
+   - easeInOutCubic: smooth timing for animations
+   =========================================================== */
 function length(v: BlochVector) { return Math.hypot(v.x, v.y, v.z); }
 function normalize(v: BlochVector): BlochVector { const L = length(v) || 1; return { x: v.x / L, y: v.y / L, z: v.z / L }; }
 function dot(a: BlochVector, b: BlochVector) { return a.x * b.x + a.y * b.y + a.z * b.z; }
@@ -29,14 +45,14 @@ function slerpUnit(a: BlochVector, b: BlochVector, t: number): BlochVector {
   const an = normalize(a), bn = normalize(b);
   let c = Math.max(-1, Math.min(1, dot(an, bn)));
 
-  // near-identical
+  // near-identical: avoid numerical instability by lerping and renormalizing
   if (1 - Math.abs(c) < 1e-6 && c > 0) {
     const v = vecLerp(an, bn, t);
     const L = length(v);
     return L > 1e-6 ? scale(v, 1 / L) : an;
   }
 
-  // antipodal — choose a stable geodesic axis
+  // antipodal (180°): choose a stable geodesic axis orthogonal to 'a'
   if (Math.abs(c + 1) < 1e-6) {
     const zAxis: BlochVector = { x: 0, y: 0, z: 1 };
     const xAxis: BlochVector = { x: 1, y: 0, z: 0 };
@@ -46,7 +62,7 @@ function slerpUnit(a: BlochVector, b: BlochVector, t: number): BlochVector {
     return normalize(rotateAroundAxis(an, k, Math.PI * t));
   }
 
-  // regular slerp
+  // regular slerp along the great circle between 'a' and 'b'
   const omega = Math.acos(c);
   const sinom = Math.sin(omega);
   const s0 = Math.sin((1 - t) * omega) / sinom;
@@ -54,22 +70,39 @@ function slerpUnit(a: BlochVector, b: BlochVector, t: number): BlochVector {
   return normalize({ x: s0 * an.x + s1 * bn.x, y: s0 * an.y + s1 * bn.y, z: s0 * an.z + s1 * bn.z });
 }
 function easeInOutCubic(t: number) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
-/** ------------------------------------------- */
+/* --------------------------------------------------------- */
 
 export default function HomePage() {
+  /* =========================================================
+     Workspace state
+     ---------------------------------------------------------
+     - workspace: list of CircuitStep objects (drag/drop + edits)
+     - results: API or sim output (Bloch + density matrices)
+     ========================================================= */
   const [workspace, setWorkspace] = useState<CircuitStep[]>([]);
   const [results, setResults] = useState<StepResult[] | null>(null);
 
-  // Always use the freshest workspace for auto-run reruns
+  // Always keep a ref pointing at the freshest workspace (used by auto-run timer)
   const workspaceRef = useRef<CircuitStep[]>(workspace);
   useEffect(() => { workspaceRef.current = workspace; }, [workspace]);
 
-  // Playback state
+  /* =========================================================
+     Playback state
+     ---------------------------------------------------------
+     - idx: which result frame is currently selected
+     - isRunning: true while awaiting /api/run_circuit
+     - isPlaying: whether we’re animating between frames
+     ========================================================= */
   const [idx, setIdx] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Auto-run
+  /* =========================================================
+     Auto-run
+     ---------------------------------------------------------
+     Debounced auto-execution after edits. Keeps UI responsive
+     while avoiding too-frequent requests during rapid changes.
+     ========================================================= */
   const [autoRun, setAutoRun] = useState(true);
   const autoRunTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nudgeAutoRun = () => {
@@ -80,7 +113,13 @@ export default function HomePage() {
     }, 250);
   };
 
-  // Animation config
+  /* =========================================================
+     Animation / Tween config
+     ---------------------------------------------------------
+     - stepDurationMs: per-segment animation length
+     - tween* refs: store transient animation state without re-renders
+     - tweenMode: slerp for unitary (arc on sphere), lerp for noise
+     ========================================================= */
   const [stepDurationMs, setStepDurationMs] = useState(900);
   const rafRef = useRef<number | null>(null);
   const tweenStartRef = useRef<number>(0);
@@ -89,20 +128,27 @@ export default function HomePage() {
   const tweenModeRef = useRef<"slerp" | "lerp">("slerp");
   const tweenIndexRef = useRef<number>(0);
 
-  // Rendered BV (uses tween if active)
+  // The Bloch vector currently rendered (interpolated if tweening)
   const [renderBV, setRenderBV] = useState<BlochVector | undefined>(undefined);
 
-  // Instant BV when not tweening
+  // Instantaneous (non-animated) vector for the current frame index
   const instantBV: BlochVector | undefined = useMemo(() => {
     if (!results || results.length === 0) return undefined;
     const i = Math.max(0, Math.min(idx, results.length - 1));
     return results[i].bloch_vector;
   }, [results, idx]);
 
+  // If no animation is active, reflect instantaneous vector in the view
   useEffect(() => {
     if (rafRef.current == null) setRenderBV(instantBV);
   }, [instantBV]);
 
+  /* =========================================================
+     Tween helpers
+     ---------------------------------------------------------
+     cancelTween: stops RAF and clears animation handle
+     beginTween: start per-segment animation from A→B
+     ========================================================= */
   function cancelTween() {
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
@@ -131,15 +177,23 @@ export default function HomePage() {
       if (tRaw < 1) {
         rafRef.current = requestAnimationFrame(tick);
       } else {
+        // On completion: advance frame and snap to destination
         setIdx(tweenIndexRef.current + 1);
         rafRef.current = null;
         setRenderBV(b);
-        setIsPlaying(false); // flip back to ▶ after each segment
+        setIsPlaying(false); // toggle back to ▶
       }
     };
     rafRef.current = requestAnimationFrame(tick);
   }
 
+  /* =========================================================
+     Transport controls
+     ---------------------------------------------------------
+     - Play animates current→next segment using slerp/lerp
+     - Prev/Next step through discrete frames (no tween)
+     - Scrub jumps to arbitrary frame index
+     ========================================================= */
   function handlePlayPause() {
     if (!results || results.length <= 1) return;
     if (isPlaying) {
@@ -177,6 +231,11 @@ export default function HomePage() {
     setIdx(val);
   }
 
+  /* =========================================================
+     Workspace reset
+     ---------------------------------------------------------
+     Clears all local UI state and cancels any active animations.
+     ========================================================= */
   function resetWorkspace() {
     setWorkspace([]);
     setResults(null);
@@ -186,6 +245,13 @@ export default function HomePage() {
     setRenderBV(undefined);
   }
 
+  /* =========================================================
+     Circuit execution
+     ---------------------------------------------------------
+     POST to /api/run_circuit with the current workspace.
+     On success, set results, reset playback index, and ensure
+     the rendered vector matches the first frame.
+     ========================================================= */
   async function runCircuit() {
     if (!workspaceRef.current.length) return;
     setIsRunning(true);
@@ -210,7 +276,13 @@ export default function HomePage() {
     }
   }
 
-  /** Palette: fixed gates + one Rotation (θ) + noise */
+  /* =========================================================
+     Palette
+     ---------------------------------------------------------
+     Pre-defined gates/noise with sensible defaults.
+     - Rotation (θ) defaults to Rx (axis switchable in editor).
+     - Noise parameters match backend defaults.
+     ========================================================= */
   const palette: PaletteItem[] = [
     { id: 1, type: "gate", name: "X Gate", op: "X" } as Gate,
     { id: 2, type: "gate", name: "Y Gate", op: "Y" } as Gate,
@@ -222,10 +294,20 @@ export default function HomePage() {
     { id: 8, type: "noise", name: "Depolarizing (p)", op: "depolarizing", parameter: 0.05 } as Noise,
   ];
 
+  // Playback derived flags for UI controls
   const stepsCount = results?.length ?? 0;
   const atStart = idx <= 0;
   const atEnd = stepsCount === 0 || idx >= stepsCount - 1;
 
+  /* =========================================================
+     Layout
+     ---------------------------------------------------------
+     Three-column grid:
+       [LEFT]  Steps list + tips + animation slider
+       [CENTER]Bloch sphere + transport controls + readout
+       [RIGHT] Palette + Workspace editor + Run/Reset controls
+     Uses CSS variables from globals.css for theme colors.
+     ========================================================= */
   return (
     <DndProvider backend={HTML5Backend}>
       {/* New layout: [LEFT steps] [CENTER sphere] [RIGHT palette + workspace] */}
