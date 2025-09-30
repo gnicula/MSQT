@@ -1,51 +1,38 @@
-// Shared types used by the UI and API payloads
+// Shared types used across components
 
-export type GateName = "H" | "X" | "Y" | "Z" | "Rx" | "Ry" | "Rz";
+export type GateName = "X" | "Y" | "Z" | "H" | "Rx" | "Ry" | "Rz";
 export type NoiseName = "amplitude_damping" | "phase_damping" | "depolarizing";
 
+export type GateParams = {
+  theta?: number; // only for R* rotations
+};
+
+export type NoiseParams = {
+  gamma?: number;  // amplitude_damping
+  lambda?: number; // phase_damping
+  p?: number;      // depolarizing
+};
+
+// Palette items you can drag from the right-hand palette
 export type Gate = {
   id: number;
   type: "gate";
-  name: string;
-  op: GateName;
-  parameter?: number; // e.g., theta (radians) for rotation gates
+  name: string;       // display label e.g. "X Gate"
+  op: GateName;       // semantic op
+  parameter?: number; // optional default parameter for rotations
 };
 
 export type Noise = {
   id: number;
   type: "noise";
-  name: string;
+  name: string;       // display label e.g. "Amplitude Damping (γ)"
   op: NoiseName;
-  parameter?: number; // e.g., gamma/lambda/p
+  parameter?: number; // default value (0..1)
 };
 
-/** What the palette shows on the right */
 export type PaletteItem = Gate | Noise;
 
-/** Gate step params */
-export type GateParams = {
-  theta?: number;
-  angle?: number;
-  Theta?: number;
-};
-
-/** Noise step params (optional keys by design) */
-export type NoiseParams = {
-  gamma?: number;  // amplitude damping
-  lambda?: number; // phase damping
-  p?: number;      // depolarizing
-};
-
+// What we store in the workspace editor and send to /api/run_circuit
 export type CircuitStep =
-  | {
-      id: number;
-      type: "gate";
-      name: GateName;
-      params?: GateParams;
-    }
-  | {
-      id: number;
-      type: "noise";
-      name: NoiseName;
-      params?: NoiseParams;
-    };
+  | { id: number; type: "gate";  name: GateName;  params?: GateParams }
+  | { id: number; type: "noise"; name: NoiseName; params?: NoiseParams };
