@@ -1,4 +1,4 @@
-import * as React from 'react';
+import { useEffect, useState } from 'react';
 
 type Props = {
   value: number[];
@@ -9,8 +9,8 @@ type Props = {
 };
 
 export function Slider({ value, min = 0, max = 100, step = 1, onValueChange }: Props) {
-  const [val, setVal] = React.useState(value[0]);
-  React.useEffect(() => setVal(value[0]), [value]);
+  const [val, setVal] = useState(value[0]);
+  useEffect(() => setVal(value[0]), [value]);
 
   return (
     <input
