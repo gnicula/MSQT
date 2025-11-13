@@ -17,25 +17,31 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  Scatter,
   ScatterChart,
   ZAxis,
+  Scatter,
 } from "recharts";
+
+// --- Visual consistency colors (match 3D analyzers & labels) ---
+const COLORS = {
+  a:   "#0ea5e9", // sky-500
+  aP:  "#0369a1", // sky-800
+  b:   "#22c55e", // green-500
+  bP:  "#166534", // green-800
+};
 
 // --- Utility math helpers ---
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 const wrapDeg = (d: number) => ((d % 360) + 360) % 360;
 const angleDiff = (a: number, b: number) => {
-  // Return smallest angle between two directions, in [0, 180]
   const diff = Math.abs(wrapDeg(a) - wrapDeg(b));
-  return diff > 180 ? 360 - diff : diff;
+  return diff > 180 ? 360 - diff : diff; // [0,180]
 };
 
 // Quantum correlation for singlet state: E_Q(θ) = -cos θ
 const E_quantum = (thetaDeg: number) => -Math.cos(toRad(thetaDeg));
 
-// A simple local-hidden-variable (LHV) analytic model yielding the triangular correlation:
-// E_C(θ) = 1 - 2θ/π for θ in [0, π]. This respects |S| ≤ 2.
+// A simple LHV analytic model: E_C(θ) = 1 - 2θ/π, θ ∈ [0, π] (respects |S| ≤ 2)
 const E_classical = (thetaDeg: number) => 1 - (2 * toRad(thetaDeg)) / Math.PI;
 
 // Compute CHSH S given four angle settings (degrees) and a correlation function.
@@ -61,7 +67,7 @@ function buildCurve(corr: (thetaDeg: number) => number) {
   return data;
 }
 
-// Suggested angles that maximize the quantum CHSH value: 0°, 45°, 22.5°, 67.5°
+// Suggested angles that maximize quantum CHSH: 0°, 45°, 22.5°, 67.5°
 const presets = [
   { name: "Quantum-optimal", a: 0, aP: 45, b: 22.5, bP: 67.5 },
   { name: "Aligned", a: 0, aP: 90, b: 0, bP: 90 },
@@ -71,7 +77,6 @@ const presets = [
 export default function QuantumCorrelationEngine() {
   const [angles, setAngles] = useState({ a: 0, aP: 45, b: 22.5, bP: 67.5 });
   const [model, setModel] = useState<"quantum" | "classical">("quantum");
-  const [showPoints, setShowPoints] = useState(true);
 
   const corr = useMemo(() => (model === "quantum" ? E_quantum : E_classical), [model]);
   const curve = useMemo(() => buildCurve(corr), [corr]);
@@ -80,16 +85,16 @@ export default function QuantumCorrelationEngine() {
     [angles, corr]
   );
 
-  const violation = result.S > 2 + 1e-9; // numerical cushion
+  const violation = result.S > 2 + 1e-9; // small cushion
 
-  const pointData = [
-    { theta: angleDiff(angles.a, angles.b), E: corr(angleDiff(angles.a, angles.b)) },
-    { theta: angleDiff(angles.a, angles.bP), E: corr(angleDiff(angles.a, angles.bP)) },
-    { theta: angleDiff(angles.aP, angles.b), E: corr(angleDiff(angles.aP, angles.b)) },
-    { theta: angleDiff(angles.aP, angles.bP), E: corr(angleDiff(angles.aP, angles.bP)) },
-  ];
+  // Separate points so we can color them individually to match a,a′,b,b′ colors
+  const pt_ab   = useMemo(() => [{ theta: angleDiff(angles.a,  angles.b),  E: corr(angleDiff(angles.a,  angles.b))  }], [angles, corr]);
+  const pt_abP  = useMemo(() => [{ theta: angleDiff(angles.a,  angles.bP), E: corr(angleDiff(angles.a,  angles.bP)) }], [angles, corr]);
+  const pt_aPb  = useMemo(() => [{ theta: angleDiff(angles.aP, angles.b),  E: corr(angleDiff(angles.aP, angles.b))  }], [angles, corr]);
+  const pt_aPbP = useMemo(() => [{ theta: angleDiff(angles.aP, angles.bP), E: corr(angleDiff(angles.aP, angles.bP)) }], [angles, corr]);
 
-  const applyPreset = (p: typeof presets[number]) => setAngles({ a: p.a, aP: p.aP, b: p.b, bP: p.bP });
+  const applyPreset = (p: typeof presets[number]) =>
+    setAngles({ a: p.a, aP: p.aP, b: p.b, bP: p.bP });
 
   return (
     <div className="w-full min-h-screen p-6 md:p-10 bg-gradient-to-b from-slate-50 to-white text-slate-900">
@@ -104,59 +109,80 @@ export default function QuantumCorrelationEngine() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Label htmlFor="modelSwitch" className="text-sm">{model === "quantum" ? "Quantum" : "Classical"}</Label>
-            <Switch id="modelSwitch" checked={model === "quantum"} onCheckedChange={(v) => setModel(v ? "quantum" : "classical")} />
+            <Label htmlFor="modelSwitch" className="text-sm">
+              {model === "quantum" ? "Quantum" : "Classical"}
+            </Label>
+            <Switch
+              id="modelSwitch"
+              checked={model === "quantum"}
+              onCheckedChange={(v) => setModel(v ? "quantum" : "classical")}
+            />
           </div>
         </div>
 
         {/* Controls */}
         <Card className="shadow-sm">
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 px-6">
             <CardTitle className="text-lg">Measurement Settings (degrees)</CardTitle>
           </CardHeader>
-          <CardContent className="grid md:grid-cols-2 gap-6">
-            <div className="grid gap-5">
-              <AngleSlider label="a" value={angles.a} onChange={(v) => setAngles({ ...angles, a: v })} />
-              <AngleSlider label="a′ (a prime)" value={angles.aP} onChange={(v) => setAngles({ ...angles, aP: v })} />
-              <AngleSlider label="b" value={angles.b} onChange={(v) => setAngles({ ...angles, b: v })} />
-              <AngleSlider label="b′ (b prime)" value={angles.bP} onChange={(v) => setAngles({ ...angles, bP: v })} />
+
+          <CardContent className="grid md:grid-cols-2 gap-6 px-6 pb-6">
+            {/* Sliders */}
+            <div className="grid gap-4">
+              <AngleSlider label="a"   value={angles.a}   color={COLORS.a}  onChange={(v) => setAngles({ ...angles, a: v })} />
+              <AngleSlider label="a′"  value={angles.aP}  color={COLORS.aP} onChange={(v) => setAngles({ ...angles, aP: v })} />
+              <AngleSlider label="b"   value={angles.b}   color={COLORS.b}  onChange={(v) => setAngles({ ...angles, b: v })} />
+              <AngleSlider label="b′"  value={angles.bP}  color={COLORS.bP} onChange={(v) => setAngles({ ...angles, bP: v })} />
             </div>
 
+            {/* Presets / About / 3D */}
             <div className="grid gap-4">
               <Tabs defaultValue="presets" className="w-full">
                 <TabsList className="grid grid-cols-2">
                   <TabsTrigger value="presets">Presets</TabsTrigger>
                   <TabsTrigger value="about">About</TabsTrigger>
                 </TabsList>
+
                 <TabsContent value="presets" className="pt-3">
                   <div className="grid gap-2">
                     {presets.map((p) => (
                       <Button key={p.name} variant="secondary" className="justify-between" onClick={() => applyPreset(p)}>
                         <span>{p.name}</span>
-                        <span className="text-xs text-slate-600">a={p.a}°, a′={p.aP}°, b={p.b}°, b′={p.bP}°</span>
+                        <span className="text-xs text-slate-600">
+                          a={p.a}°, a′={p.aP}°, b={p.b}°, b′={p.bP}°
+                        </span>
                       </Button>
                     ))}
                     <div className="text-xs text-slate-500 mt-1">
-                      The "Quantum-optimal" preset is close to the settings that maximize |S| in the quantum model.
+                      “Quantum-optimal” is near the settings that maximize |S| in the quantum model.
                     </div>
                   </div>
                 </TabsContent>
+
                 <TabsContent value="about" className="pt-3">
                   <div className="text-sm text-slate-600 leading-relaxed flex items-start gap-2">
                     <Info className="h-4 w-4 mt-0.5" />
-                    <p>
-                      Quantum model uses E(θ) = -cos θ for the singlet state. Classical model uses a simple
-                      local-hidden-variable correlation E(θ) = 1 - 2θ/π, which always satisfies |S| ≤ 2.
-                    </p>
+                    <div className="space-y-2">
+                      <p>
+                        Alice and Bob each choose between two analyzer orientations (a,a′ for Alice; b,b′ for Bob).
+                        The simulator computes four correlations E(a,b), E(a,b′), E(a′,b), E(a′,b′) and combines them
+                        into the CHSH value S = |E(a,b) − E(a,b′) + E(a′,b) + E(a′,b′)|.
+                      </p>
+                      <p>
+                        The “Quantum” model uses the singlet prediction E(θ)=−cosθ. The “Classical” model uses a
+                        simple local-hidden-variable correlation E(θ)=1−2θ/π, which never exceeds the classical
+                        Bell bound |S|≤2. Quantum correlations can reach |S|=2√2.
+                      </p>
+                      <p className="text-xs">
+                        Tip: the 3D magnets and the slider labels share colors with the four CHSH sample points below.
+                        Adjust angles and watch the points move along the correlation curve.
+                      </p>
+                    </div>
                   </div>
                 </TabsContent>
               </Tabs>
 
-              <div className="flex items-center gap-3">
-                <Switch id="points" checked={showPoints} onCheckedChange={setShowPoints} />
-                <Label htmlFor="points" className="text-sm">Show CHSH sample points on the curve</Label>
-              </div>
-                <AnalyzerScene3D a={angles.a} aP={angles.aP} b={angles.b} bP={angles.bP} />
+              <AnalyzerScene3D a={angles.a} aP={angles.aP} b={angles.b} bP={angles.bP} />
             </div>
           </CardContent>
         </Card>
@@ -164,51 +190,60 @@ export default function QuantumCorrelationEngine() {
         {/* Results */}
         <div className="grid lg:grid-cols-2 gap-6">
           <Card className="shadow-sm">
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-2 px-6">
               <CardTitle className="text-lg">Correlation Curve E(θ)</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-6 pb-6">
               <div className="h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={curve} margin={{ top: 10, right: 14, bottom: 10, left: 0 }}>
+                  <LineChart data={curve} margin={{ top: 10, right: 14, bottom: 10, left: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="theta" type="number" domain={[0, 180]} tickCount={10} tickFormatter={(v) => `${v}°`} label={{ value: "θ (deg)", position: "insideBottom", dy: 10 }} />
+                    <XAxis dataKey="theta" type="number" domain={[0, 180]} tickCount={10}
+                      tickFormatter={(v) => `${v}°`} label={{ value: "θ (deg)", position: "insideBottom", dy: 10 }} />
                     <YAxis domain={[-1, 1]} tickCount={5} />
-                    <Tooltip formatter={(v: any) => v.toFixed ? v.toFixed(4) : v} labelFormatter={(l) => `θ = ${l}°`} />
+                    <Tooltip formatter={(v: any) => (typeof v === "number" && v.toFixed ? v.toFixed(4) : v)}
+                             labelFormatter={(l) => `θ = ${l}°`} />
                     <ReferenceLine y={0} />
                     <Line type="monotone" dataKey="E" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              {showPoints && (
-                <div className="h-40 w-full mt-4">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ScatterChart margin={{ top: 10, right: 14, bottom: 10, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="theta" type="number" domain={[0, 180]} tickFormatter={(v) => `${v}°`} label={{ value: "θ for CHSH terms (deg)", position: "insideBottom", dy: 10 }} />
-                      <YAxis dataKey="E" domain={[-1, 1]} />
-                      <ZAxis dataKey={() => 100} range={[100, 100]} />
-                      <Tooltip formatter={(v: any) => (typeof v === "number" ? v.toFixed(4) : v)} labelFormatter={(l) => `θ = ${l}°`} />
-                      <Scatter data={pointData} />
-                      <ReferenceLine y={0} />
-                    </ScatterChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+
+              {/* Always show CHSH points (color-coded per analyzer pairing) */}
+              <div className="h-40 w-full mt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 10, right: 14, bottom: 10, left: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="theta" type="number" domain={[0, 180]}
+                      tickFormatter={(v) => `${v}°`}
+                      label={{ value: "θ for CHSH terms (deg)", position: "insideBottom", dy: 10 }} />
+                    <YAxis dataKey="E" domain={[-1, 1]} />
+                    <ZAxis dataKey={() => 120} range={[120, 120]} />
+                    <Tooltip formatter={(v: any) => (typeof v === "number" ? v.toFixed(4) : v)}
+                             labelFormatter={(l) => `θ = ${l}°`} />
+                    {/* four series = four colors */}
+                    <Scatter name="E(a,b)"     data={pt_ab}   fill={COLORS.a} />
+                    <Scatter name="E(a,b′)"    data={pt_abP}  fill={COLORS.aP} />
+                    <Scatter name="E(a′,b)"    data={pt_aPb}  fill={COLORS.b} />
+                    <Scatter name="E(a′,b′)"   data={pt_aPbP} fill={COLORS.bP} />
+                    <ReferenceLine y={0} />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
             </CardContent>
           </Card>
 
           <Card className="shadow-sm">
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-2 px-6">
               <CardTitle className="text-lg">CHSH Result</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-6 pb-6">
               <div className="grid gap-4">
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <ValueBox label="E(a,b)" value={result.terms.ab} />
-                  <ValueBox label="E(a,b′)" value={result.terms.abP} />
-                  <ValueBox label="E(a′,b)" value={result.terms.aPb} />
-                  <ValueBox label="E(a′,b′)" value={result.terms.aPbP} />
+                  <ValueBox label="E(a,b)"   value={result.terms.ab}   color={COLORS.a} />
+                  <ValueBox label="E(a,b′)"  value={result.terms.abP}  color={COLORS.aP} />
+                  <ValueBox label="E(a′,b)"  value={result.terms.aPb}  color={COLORS.b} />
+                  <ValueBox label="E(a′,b′)" value={result.terms.aPbP} color={COLORS.bP} />
                 </div>
 
                 <motion.div
@@ -234,31 +269,40 @@ export default function QuantumCorrelationEngine() {
                       Use preset: {p.name}
                     </Button>
                   ))}
-                  <Button variant="ghost" onClick={() => setAngles({ a: 0, aP: 45, b: 22.5, bP: 67.5 })}>Reset</Button>
+                  <Button variant="ghost" onClick={() => setAngles({ a: 0, aP: 45, b: 22.5, bP: 67.5 })}>
+                    Reset
+                  </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
-        </div>
-
-        {/* Footer note */}
-        <div className="text-xs text-slate-500">
-          This is a pure frontend implementation (no backend). The quantum curve uses E(θ) = -cos θ; the classical curve uses
-          a simple deterministic local model E(θ) = 1 - 2θ/π for θ ∈ [0, π].
         </div>
       </div>
     </div>
   );
 }
 
-function AngleSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function AngleSlider({
+  label,
+  value,
+  onChange,
+  color,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  color: string;
+}) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <Label className="text-sm">{label}</Label>
+      <div className="flex items-center justify-between mb-1">
+        <Label className="text-sm" style={{ color }}>
+          {label}
+        </Label>
         <div className="text-sm tabular-nums text-slate-700">{value.toFixed(1)}°</div>
       </div>
       <Slider
+        className="h-6"               // slimmer track so sliders don’t look oversized
         value={[value]}
         min={0}
         max={180}
@@ -269,10 +313,12 @@ function AngleSlider({ label, value, onChange }: { label: string; value: number;
   );
 }
 
-function ValueBox({ label, value }: { label: string; value: number }) {
+function ValueBox({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="rounded-xl border p-3 bg-white/60">
-      <div className="text-xs text-slate-500 mb-1">{label}</div>
+      <div className="text-xs text-slate-500 mb-1">
+        <span style={{ color }}>{label}</span>
+      </div>
       <div className="text-lg font-medium tabular-nums">{value.toFixed(4)}</div>
     </div>
   );
