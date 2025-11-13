@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Info } from "lucide-react";
-import AnalyzerScene3D from "@/components/analyzerScene3d";
+import AnalyzerScene3D from "@/components/ui/analyzerScene3d";
 import {
   LineChart,
   Line,
