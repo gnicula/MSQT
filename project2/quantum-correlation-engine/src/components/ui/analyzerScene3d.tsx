@@ -81,7 +81,7 @@ export default function AnalyzerScene3D({ a, aP, b, bP, height = 280 }: Props) {
         <directionalLight position={[-3, -2, 2]} intensity={0.3} />
 
         {/* global tilt: [pitch, yaw, roll]; small positive roll gives a clockwise vibe */}
-        <group rotation={[-0.14, 0.30, 0.12]}>
+        <group rotation={[-0.14, 0.60, 0.12]}>
           {/* single row, evenly spaced; all at y=0 so they’re perfectly in line */}
           <SternGerlachRig pos={[-1.35, 0.0, 0]} angleDeg={a}  color="#0ea5e9" label="a"  />
           <SternGerlachRig pos={[-0.45, 0.0, 0]} angleDeg={aP} color="#0369a1" label="a′" />
