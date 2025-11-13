@@ -14,48 +14,53 @@ type RigProps = {
 
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 
-// A single Stern–Gerlach rig: top magnet is a triangular prism, bottom is a box.
-// Everything rotates around +X (the beam axis).
+// palette
+const TOP_COLOR = "#475569";    // slate-600 (triangular prism)
+const BOT_COLOR = "#1f2937";    // slate-900 (rect box)
+const ROD_COLOR = "#1fb6c9";    // cyan-ish orientation cue
+
+// roll the triangular prism around +X so one vertex points straight down (-Y)
+// (this makes the “point” aim toward the center of the bottom block at 0°)
+const TRI_ROLL = -Math.PI / 2; // adjust +/- 60° (π/3) if you want a different face orientation
+
 function SternGerlachRig({ angleDeg, label, color, pos }: RigProps) {
+  // rotate WHOLE rig about +X => matches “rotate analyzer around the beam axis”
   const rotX = useMemo(() => toRad(angleDeg), [angleDeg]);
 
-  // dimensions: shorter so we can line up 4 rigs in a row without overlap
-  const len = 0.9;      // magnet length along +X
-  const gapY = 0.16;    // half-gap between magnets (along Y)
-  const boxW = 0.22;    // magnet thickness (Y)
-  const boxD = 0.32;    // magnet depth (Z)
-  const triR = 0.20;    // “radius” of triangular prism (approx half-width)
-  const beamLen = 0.9;  // short cyan rod (centered), purely for orientation cue
+  // shorter magnets so all 4 fit easily
+  const len = 0.68;   // along +X
+  const gapY = 0.15;  // half-gap between magnets (Y)
+  const boxW = 0.20;  // bottom magnet thickness (Y)
+  const boxD = 0.30;  // bottom magnet depth (Z)
+  const triR = 0.18;  // triangular prism “radius”
+  const rodLen = 0.72;
 
   return (
     <group position={pos}>
-      {/* rotate about +X so all rigs share the same physical rotation axis */}
+      {/* everything below rotates around X together */}
       <group rotation={[rotX, 0, 0]}>
-        {/* short cyan rod through the gap (orientation cue only) */}
-        <mesh position={[0, 0, 0]} rotation={[0, 0, 0]}>
-          {/* cylinder default axis is Y; rotate to lie along X */}
-          <cylinderGeometry args={[0.012, 0.012, beamLen, 20]} />
-          <meshStandardMaterial color="#1eb4c8" />
-          {/* rotate to X-axis */}
-          <group rotation={[0, 0, Math.PI / 2]} />
+        {/* short cyan rod through the gap (orientation cue) */}
+        <mesh rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.012, 0.012, rodLen, 20]} />
+          <meshStandardMaterial color={ROD_COLOR} />
         </mesh>
 
-        {/* TOP magnet: triangular prism (cylinder with 3 sides), oriented along +X */}
-        <mesh position={[0, gapY, 0]} rotation={[0, 0, Math.PI / 2 /* make its axis along X */]}>
-          {/* radiusTop=radiusBottom=triR, height=len, radialSegments=3 => triangular prism */}
+        {/* TOP magnet: triangular prism; axis along +X, with a roll so the tip points to center */}
+        <mesh position={[0, gapY, 0]} rotation={[TRI_ROLL, 0, Math.PI / 2]}>
+          {/* cylinder with 3 radial segments => triangular prism */}
           <cylinderGeometry args={[triR, triR, len, 3]} />
-          <meshStandardMaterial color="#6b7280" metalness={0.25} roughness={0.55} />
+          <meshStandardMaterial color={TOP_COLOR} metalness={0.25} roughness={0.55} />
         </mesh>
 
         {/* BOTTOM magnet: rectangular block */}
         <mesh position={[0, -gapY, 0]}>
           <boxGeometry args={[len, boxW, boxD]} />
-          <meshStandardMaterial color="#52525b" metalness={0.25} roughness={0.6} />
+          <meshStandardMaterial color={BOT_COLOR} metalness={0.25} roughness={0.6} />
         </mesh>
       </group>
 
-      {/* screen-space label (stays upright, does not rotate with rig) */}
-      <Html position={[0, -0.42, 0]} center>
+      {/* screen-space label (upright; does not rotate with rig) */}
+      <Html position={[0, -0.40, 0]} center>
         <div
           style={{
             background: "rgba(255,255,255,0.9)",
@@ -74,28 +79,28 @@ function SternGerlachRig({ angleDeg, label, color, pos }: RigProps) {
   );
 }
 
-export default function AnalyzerScene3D({ a, aP, b, bP, height = 320 }: Props) {
+export default function AnalyzerScene3D({ a, aP, b, bP, height = 300 }: Props) {
   return (
     <div className="rounded-2xl border bg-white p-3 shadow-sm">
       <div className="text-sm text-slate-700 mb-2">Stern–Gerlach analyzers (3D view)</div>
       <Canvas
         orthographic
-        // locked 3/4 isometric view so all rigs share the same global frame
-        camera={{ zoom: 140, position: [3.2, 2.6, 4.0] }}
+        // shallower 3/4 view (less tilt), with a touch more zoom so the row fits snugly
+        camera={{ zoom: 165, position: [3.0, 2.0, 4.2] }}
         style={{ width: "100%", height }}
       >
-        {/* simple lighting */}
+        {/* lighting */}
         <ambientLight intensity={0.65} />
         <directionalLight position={[3, 4, 5]} intensity={0.55} />
         <directionalLight position={[-3, -2, 2]} intensity={0.3} />
 
-        {/* slight global tilt for depth; ALL rigs in one row along X */}
-        <group rotation={[-0.28, 0.35, 0]}>
-          {/* left → right layout; all share y=0 to be “in line” */}
-          <SternGerlachRig pos={[-2.0, 0.0, 0]} angleDeg={a}  color="#0ea5e9" label="a"  />
-          <SternGerlachRig pos={[-0.65, 0.0, 0]} angleDeg={aP} color="#0369a1" label="a′" />
-          <SternGerlachRig pos={[ 0.65, 0.0, 0]} angleDeg={b}  color="#22c55e" label="b"  />
-          <SternGerlachRig pos={[ 2.0, 0.0, 0]} angleDeg={bP} color="#166534" label="b′" />
+        {/* global gentle tilt so the row “leans” away into the screen and toward the viewer */}
+        <group rotation={[-0.18, 0.26, 0]}>
+          {/* single row, evenly spaced; all share y=0 so they’re “in line” */}
+          <SternGerlachRig pos={[-1.6, 0.0, 0]} angleDeg={a}  color="#0ea5e9" label="a"  />
+          <SternGerlachRig pos={[-0.53, 0.0, 0]} angleDeg={aP} color="#0369a1" label="a′" />
+          <SternGerlachRig pos={[ 0.53, 0.0, 0]} angleDeg={b}  color="#22c55e" label="b"  />
+          <SternGerlachRig pos={[ 1.6, 0.0, 0]} angleDeg={bP} color="#166534" label="b′" />
         </group>
       </Canvas>
     </div>
