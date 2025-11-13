@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Info } from "lucide-react";
+import AnalyzerDial from "@/components/ui/analyzerDial";
 import {
   LineChart,
   Line,
@@ -155,6 +156,7 @@ export default function QuantumCorrelationEngine() {
                 <Switch id="points" checked={showPoints} onCheckedChange={setShowPoints} />
                 <Label htmlFor="points" className="text-sm">Show CHSH sample points on the curve</Label>
               </div>
+                <AnalyzerDial a={angles.a} aP={angles.aP} b={angles.b} bP={angles.bP} />
             </div>
           </CardContent>
         </Card>
