@@ -4,6 +4,7 @@ import type { ReactNode, HTMLAttributes } from 'react';
 type TabsCtx = { value: string; setValue: (v: string) => void };
 const Ctx = createContext<TabsCtx | null>(null);
 
+// Root Tabs component providing shared context for active tab state
 export function Tabs({
   defaultValue,
   className = '',
@@ -21,6 +22,7 @@ export function Tabs({
   );
 }
 
+// Wrapper for tab triggers; typically rendered as a horizontal button group
 export function TabsList({
   className = '',
   children,
@@ -32,6 +34,7 @@ export function TabsList({
   );
 }
 
+// Individual tab trigger button; updates active tab in context
 export function TabsTrigger({
   value,
   children,
@@ -53,6 +56,7 @@ export function TabsTrigger({
   );
 }
 
+// Renders content only when its associated tab is active
 export function TabsContent({
   value,
   className = '',

@@ -1,49 +1,77 @@
-/* Tailwind v4: load the framework */
+/* ----------------------------------------------------------
+   Tailwind v4: load the framework
+   ----------------------------------------------------------
+   This imports all of Tailwind's utilities and base styles.
+   You can use the pre-built utility classes without writing
+   your own CSS.
+----------------------------------------------------------- */
 @import "tailwindcss";
 
-/* If you later want to use @apply, uncomment the next line:
-@reference "tailwindcss";
-*/
+/* ----------------------------------------------------------
+   Optional @apply reference
+   ----------------------------------------------------------
+   Uncomment this if you want to use @apply in future CSS blocks
+   to compose Tailwind utility classes within plain CSS.
+----------------------------------------------------------- */
+/* @reference "tailwindcss"; */
 
-/* --- Base resets & nice defaults (plain CSS, no @apply) --- */
+/* ----------------------------------------------------------
+   Base resets & default styles
+   ----------------------------------------------------------
+   These are plain CSS resets and system defaults for:
+     - font
+     - colors
+     - line-height
+     - rendering optimizations
+----------------------------------------------------------- */
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  font-weight: 400;
-  line-height: 1.5;
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif; /* modern system fonts */
+  font-weight: 400;                                              /* normal weight baseline */
+  line-height: 1.5;                                              /* readable line spacing */
 
-  color-scheme: light;
-  background-color: #ffffff;
-  color: #213547;
+  color-scheme: light;                                           /* light mode default */
+  background-color: #ffffff;                                     /* background base */
+  color: #213547;                                                /* text color (dark slate) */
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  font-synthesis: none;                                          /* disable synthetic bold/italic */
+  text-rendering: optimizeLegibility;                            /* better text rendering */
+  -webkit-font-smoothing: antialiased;                           /* smooth on Mac/iOS */
+  -moz-osx-font-smoothing: grayscale;                            /* smooth on Firefox */
 }
 
+/* Body defaults */
 body {
-  margin: 0;
-  min-height: 100vh;
+  margin: 0;           /* remove default spacing */
+  min-height: 100vh;   /* ensure full viewport height */
 }
 
+/* Links */
 a {
-  font-weight: 500;
-  color: #2563eb; /* Tailwind's blue-600-ish */
-  text-decoration: none;
+  font-weight: 500;       /* slightly bolder for clarity */
+  color: #2563eb;         /* Tailwind blue-600 */
+  text-decoration: none;  /* remove underline */
 }
 
+/* Buttons */
 button {
-  border-radius: 12px;
-  padding: 0.6em 1.2em;
-  font-weight: 500;
-  transition: background-color .2s, border-color .2s, color .2s;
+  border-radius: 12px;                                     /* smooth, modern corners */
+  padding: 0.6em 1.2em;                                    /* comfortable click area */
+  font-weight: 500;                                        /* semi-bold text */
+  transition: background-color .2s, border-color .2s, color .2s; /* smooth hover effects */
 }
 
-/* optional dark-mode base */
+/* ----------------------------------------------------------
+   Optional dark mode base
+   ----------------------------------------------------------
+   Uses system preference for color scheme. Updates:
+     - color-scheme
+     - background
+     - text color
+----------------------------------------------------------- */
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    background-color: #0f172a; /* slate-900 */
-    color: #e2e8f0;            /* slate-200 */
+    background-color: #0f172a; /* Tailwind slate-900 */
+    color: #e2e8f0;            /* Tailwind slate-200 */
   }
 }

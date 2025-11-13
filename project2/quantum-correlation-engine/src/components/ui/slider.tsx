@@ -6,9 +6,10 @@ type Props = {
   max?: number;
   step?: number;
   onValueChange?: (v: number[]) => void;
-  className?: string; //allow className from callers
+  className?: string;
 };
 
+// Single-handle slider component with controlled and default styling
 export function Slider({
   value,
   min = 0,
@@ -18,6 +19,8 @@ export function Slider({
   className = "",
 }: Props) {
   const [val, setVal] = useState(value[0]);
+
+  // Keep internal state in sync with external value
   useEffect(() => setVal(value[0]), [value]);
 
   return (
@@ -32,7 +35,7 @@ export function Slider({
         setVal(v);
         onValueChange?.([v]);
       }}
-      //merge caller’s classes; keep sensible defaults
+      // Merge caller classes with base styling
       className={`w-full accent-slate-900 ${className}`}
     />
   );

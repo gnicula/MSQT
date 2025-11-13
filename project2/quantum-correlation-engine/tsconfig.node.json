@@ -1,26 +1,43 @@
 {
   "compilerOptions": {
+    // ----------------------------------------------------------
+    // Build info for incremental compilation
+    // ----------------------------------------------------------
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-    "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "types": ["node"],
-    "skipLibCheck": true,
 
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
+    // ----------------------------------------------------------
+    // Language target and libraries
+    // ----------------------------------------------------------
+    "target": "ES2023",           // Output modern JS (ES2023)
+    "lib": ["ES2023"],            // Include ES2023 built-in APIs
+    "module": "ESNext",           // Use latest ES module syntax
 
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    // ----------------------------------------------------------
+    // Type declarations
+    // ----------------------------------------------------------
+    "types": ["node"],            // Include Node.js types for globals
+    "skipLibCheck": true,         // Skip type checking for dependencies
+
+    // ----------------------------------------------------------
+    // Bundler-specific module resolution
+    // ----------------------------------------------------------
+    "moduleResolution": "bundler",           // Optimized for Vite or modern bundlers
+    "allowImportingTsExtensions": true,      // Allow imports with `.ts` extensions
+    "verbatimModuleSyntax": true,            // Keep import/export syntax as written
+    "moduleDetection": "force",              // Treat all files as ES modules
+    "noEmit": true,                          // Do not generate output (linting + type checks only)
+
+    // ----------------------------------------------------------
+    // Strict type checks and safety
+    // ----------------------------------------------------------
+    "strict": true,                          // Enable all strict type checking
+    "noUnusedLocals": true,                  // Warn on unused local variables
+    "noUnusedParameters": true,              // Warn on unused function parameters
+    "erasableSyntaxOnly": true,              // Allows unused type-only imports
+    "noFallthroughCasesInSwitch": true,      // Prevent accidental switch fallthrough
+    "noUncheckedSideEffectImports": true     // Disallow imports with potential side effects not checked
   },
+
+  // Files included for this configuration (Vite-specific)
   "include": ["vite.config.ts"]
 }

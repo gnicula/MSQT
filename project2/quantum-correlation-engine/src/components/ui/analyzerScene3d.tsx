@@ -8,44 +8,42 @@ type RigProps = { angleDeg: number; label: string; color: string; pos: [number, 
 
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 
-// palette: common convention (N = red, S = blue)
-const TOP_COLOR = "#dc2626"; // red-600 (N)
-const BOT_COLOR = "#2563eb"; // blue-600 (S)
+// Magnetic pole colors (N = red, S = blue)
+const TOP_COLOR = "#dc2626";
+const BOT_COLOR = "#2563eb";
 
-// rotate the triangular prism around +X so a VERTEX points straight down (-Y)
-// use +π/2 (mirrored from before); tweak by ±π/3 to snap a different corner if desired
+// Prism rotation about the X-axis; adjusts orientation of the triangular magnet
 const TRI_ROLL = Math.PI / 2;
 
 function SternGerlachRig({ angleDeg, label, color, pos }: RigProps) {
-  // rotate WHOLE rig about +X (beam axis)
+  // Rotation of the entire analyzer around the beam axis (+X)
   const rotX = useMemo(() => toRad(angleDeg), [angleDeg]);
 
-  // shortened geometry so 4 rigs fit comfortably
-  const len = 0.56;   // magnet length along +X (shorter than before)
-  const gapY = 0.14;  // half-gap between magnets (Y)
-  const boxW = 0.18;  // bottom magnet thickness (Y)
-  const boxD = 0.26;  // bottom magnet depth (Z)
-  const triR = 0.16;  // triangular prism “radius”
+  // Dimensions tuned for compact layout of multiple analyzers
+  const len = 0.56;   // magnet length along +X
+  const gapY = 0.14;  // half the vertical separation between magnets
+  const boxW = 0.18;  // magnet block thickness
+  const boxD = 0.26;  // magnet block depth
+  const triR = 0.16;  // triangular prism radius
 
   return (
     <group position={pos}>
-      {/* everything inside rotates about +X together */}
+      {/* Rotating assembly for the analyzer */}
       <group rotation={[rotX, 0, 0]}>
-        {/* TOP magnet: triangular prism; axis along +X, apex aimed toward center of bottom block */}
+        {/* Top magnet: triangular prism with apex directed toward the bottom block */}
         <mesh position={[0, gapY, 0]} rotation={[TRI_ROLL, 0, Math.PI / 2]}>
-          {/* cylinder with 3 radial segments => triangular prism */}
           <cylinderGeometry args={[triR, triR, len, 3]} />
           <meshStandardMaterial color={TOP_COLOR} metalness={0.25} roughness={0.5} />
         </mesh>
 
-        {/* BOTTOM magnet: rectangular block (centered) */}
+        {/* Bottom magnet: rectangular block */}
         <mesh position={[0, -gapY, 0]}>
           <boxGeometry args={[len, boxW, boxD]} />
           <meshStandardMaterial color={BOT_COLOR} metalness={0.25} roughness={0.55} />
         </mesh>
       </group>
 
-      {/* label (stays upright; not part of rotating group) */}
+      {/* Text label, fixed in screen space */}
       <Html position={[0, -0.36, 0]} center>
         <div
           style={{
@@ -71,18 +69,18 @@ export default function AnalyzerScene3D({ a, aP, b, bP, height = 280 }: Props) {
       <div className="text-sm text-slate-700 mb-2">Stern–Gerlach analyzers (3D view)</div>
       <Canvas
         orthographic
-        // shallower 3/4 angle; a touch of clockwise roll for the whole row
+        // Slightly angled top-down view for clarity
         camera={{ zoom: 190, position: [3.0, 1.9, 4.1] }}
         style={{ width: "100%", height }}
       >
-        {/* lighting */}
+        {/* Lighting setup */}
         <ambientLight intensity={0.65} />
         <directionalLight position={[3, 4, 5]} intensity={0.55} />
         <directionalLight position={[-3, -2, 2]} intensity={0.3} />
 
-        {/* global tilt: [pitch, yaw, roll]; small positive roll gives a clockwise vibe */}
+        {/* Global rotation to give a natural perspective */}
         <group rotation={[-0.14, -0.30, 0.12]}>
-          {/* single row, evenly spaced; all at y=0 so they’re perfectly in line */}
+          {/* Four analyzers, evenly spaced along the X-axis */}
           <SternGerlachRig pos={[-1.35, 0.0, 0]} angleDeg={a}  color="#0ea5e9" label="a"  />
           <SternGerlachRig pos={[-0.45, 0.0, 0]} angleDeg={aP} color="#0369a1" label="a′" />
           <SternGerlachRig pos={[ 0.45, 0.0, 0]} angleDeg={b}  color="#22c55e" label="b"  />
