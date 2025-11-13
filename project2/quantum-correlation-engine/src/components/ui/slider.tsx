@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
 type Props = {
   value: number[];
@@ -6,9 +6,17 @@ type Props = {
   max?: number;
   step?: number;
   onValueChange?: (v: number[]) => void;
+  className?: string; // ✅ allow className from callers
 };
 
-export function Slider({ value, min = 0, max = 100, step = 1, onValueChange }: Props) {
+export function Slider({
+  value,
+  min = 0,
+  max = 100,
+  step = 1,
+  onValueChange,
+  className = "",
+}: Props) {
   const [val, setVal] = useState(value[0]);
   useEffect(() => setVal(value[0]), [value]);
 
@@ -24,7 +32,8 @@ export function Slider({ value, min = 0, max = 100, step = 1, onValueChange }: P
         setVal(v);
         onValueChange?.([v]);
       }}
-      className="w-full accent-slate-900"
+      // ✅ merge caller’s classes; keep sensible defaults
+      className={`w-full accent-slate-900 ${className}`}
     />
   );
 }
