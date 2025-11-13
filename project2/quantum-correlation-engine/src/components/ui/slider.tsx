@@ -6,7 +6,7 @@ type Props = {
   max?: number;
   step?: number;
   onValueChange?: (v: number[]) => void;
-  className?: string; // ✅ allow className from callers
+  className?: string; //allow className from callers
 };
 
 export function Slider({
@@ -32,7 +32,7 @@ export function Slider({
         setVal(v);
         onValueChange?.([v]);
       }}
-      // ✅ merge caller’s classes; keep sensible defaults
+      //merge caller’s classes; keep sensible defaults
       className={`w-full accent-slate-900 ${className}`}
     />
   );
