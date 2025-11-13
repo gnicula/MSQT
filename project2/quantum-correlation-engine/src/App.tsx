@@ -240,7 +240,7 @@ export default function QuantumCorrelationEngine() {
                 </ResponsiveContainer>
               </div>
 
-              {/* Always display CHSH sample points */}
+              {/* Always display CHSH sample points (no tooltip) */}
               <div className="h-40 w-full mt-4 overflow-hidden">
                 <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart margin={{ top: 10, right: 14, bottom: 10, left: 4 }}>
@@ -254,21 +254,7 @@ export default function QuantumCorrelationEngine() {
                     />
                     <YAxis dataKey="E" domain={[-1, 1]} />
                     <ZAxis dataKey={() => 120} range={[120, 120]} />
-                    <Tooltip
-                      position={{ x: 14, y: 10 }}
-                      cursor={false}
-                      allowEscapeViewBox={{ x: false, y: false }}
-                      wrapperStyle={{
-                        background: "rgba(255,255,255,0.95)",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 8,
-                        fontSize: 12,
-                        padding: "6px 8px",
-                        pointerEvents: "none",
-                      }}
-                      formatter={(v: any) => (typeof v === "number" ? v.toFixed(4) : v)}
-                      labelFormatter={(l) => `θ = ${l}°`}
-                    />
+                    {/* Tooltip removed entirely */}
                     <Scatter name="E(a,b)" data={pt_ab} fill={COLORS.a} />
                     <Scatter name="E(a,b′)" data={pt_abP} fill={COLORS.aP} />
                     <Scatter name="E(a′,b)" data={pt_aPb} fill={COLORS.b} />
