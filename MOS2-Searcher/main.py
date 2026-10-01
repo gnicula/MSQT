@@ -123,6 +123,7 @@ def main():
     viewer = ImageViewer(root)
     viewer.pack(fill="both", expand=True)
 
+
     def close_application():
         """Stop background tasks and close the window."""
         viewer.close()

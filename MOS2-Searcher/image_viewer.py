@@ -12,7 +12,8 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-from dictionary_matcher import DictionaryMatcher, SlidingWindowMatcher
+from basic_dictionary import find as basic_dictionary_find
+from dictionary_matcher import DictionaryMatcher, Match, SlidingWindowMatcher
 from image_source import BMPFormatError, BMPImage
 from rolling_matcher import RollingHashMatcher
 
@@ -74,9 +75,10 @@ class ImageViewer(tk.Frame):
         self.events = queue.Queue()
         # These names appear in the algorithm dropdown.
         self.matchers = {
-            "Brute force": SlidingWindowMatcher(),
-            "Python dictionary": DictionaryMatcher(),
-            "Rolling hash": RollingHashMatcher(),
+            "Brute force": SlidingWindowMatcher().find,
+            "Python dictionary": DictionaryMatcher().find,
+            "Basic dictionary": basic_dictionary_find,
+            "Rolling hash": RollingHashMatcher().find,
         }
         self.algorithm = tk.StringVar(value="Python dictionary")
         self._build_widgets()
@@ -489,7 +491,9 @@ class ImageViewer(tk.Frame):
             # This is the only use of the old location.  After this line the
             # search method sees the copied colors, not the original location.
             template = source.read_rgb(*selection)
-            match = matcher.find(source, template, progress)
+            match = matcher(source, template, progress)
+            if isinstance(match, tuple):
+                match = Match(*match)
             self.events.put(("search", generation, match, None))
         except Exception as exc:
             self.events.put(("search", generation, None, exc))
