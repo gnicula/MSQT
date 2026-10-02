@@ -14,22 +14,27 @@ from rolling_matcher import rolling_hash
 
 
 class ImageViewer(tk.Frame):
-    """Show the image, selection, match, and current search position."""
+    """Show the BMP, let the user select a rectangle, and search it."""
 
     def __init__(self, root):
         super().__init__(root)
         self.source = None
         self.old_sources = []
         self.photo = None
-        self.zoom = 1
-        self.view_x = self.view_y = 0
+        self.zoom = 1.0
+        self.view_x = self.view_y = 0.0
         self.origin = (0, 0)
         self.display_size = (0, 0)
-        self.selection = self.match = self.scan = None
-        self.drag_start = self.pan_start = None
-        self.space = False
 
-        self.image_id = self.search_id = 0
+        self.selection = None
+        self.match = None
+        self.scan = None
+        self.drag_start = None
+        self.pan_start = None
+        self.pan_mode = False
+
+        self.image_id = 0
+        self.search_id = 0
         self.pending_render = None
         self.rendering = False
         self.progress = None
@@ -37,6 +42,7 @@ class ImageViewer(tk.Frame):
         self.closed = False
         self.workers = ThreadPoolExecutor(max_workers=2)
         self.messages = queue.Queue()
+
         self.algorithms = {
             "Brute force": brute_force,
             "Python dictionary": dictionary_search,
@@ -47,54 +53,72 @@ class ImageViewer(tk.Frame):
         self.make_widgets()
         self.after(50, self.poll)
 
-    # The controls and mouse actions
+    # Window controls and mouse bindings
     def make_widgets(self):
         bar = tk.Frame(self)
         bar.pack(fill="x", padx=8, pady=8)
+
         tk.Button(bar, text="Open BMP", command=self.open_image).pack(side="left")
         tk.Button(bar, text="Fit", command=self.fit).pack(side="left", padx=5)
-        tk.Button(bar, text="Clear selection", command=self.clear).pack(side="left")
+        tk.Button(bar, text="Zoom in", command=lambda: self.change_zoom(1)).pack(
+            side="left"
+        )
+        tk.Button(bar, text="Zoom out", command=lambda: self.change_zoom(-1)).pack(
+            side="left", padx=5
+        )
+        self.pan_button = tk.Button(
+            bar, text="Pan: off", command=self.toggle_pan
+        )
+        self.pan_button.pack(side="left")
+        tk.Button(bar, text="Clear selection", command=self.clear).pack(
+            side="left", padx=5
+        )
+
         self.find_button = tk.Button(
             bar, text="Find selection", command=self.find, state="disabled"
         )
         self.find_button.pack(side="left", padx=5)
         tk.Label(bar, text="Algorithm:").pack(side="left", padx=(10, 2))
         tk.OptionMenu(bar, self.algorithm, *self.algorithms).pack(side="left")
+
         self.zoom_text = tk.StringVar(value="Zoom: N/A")
         tk.Label(bar, textvariable=self.zoom_text).pack(side="left", padx=10)
 
         self.canvas = tk.Canvas(self, background="#303030", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True, padx=8)
+
         self.image_text = tk.StringVar(value="Open a BMP image to begin.")
         self.selection_text = tk.StringVar(value="Selection: none")
         self.search_text = tk.StringVar(value="Search: idle")
         self.cursor_text = tk.StringVar(value="Cursor: N/A")
-        for label in (self.image_text, self.selection_text, self.search_text, self.cursor_text):
-            tk.Label(self, textvariable=label, anchor="w").pack(fill="x", padx=8)
+        for text in (
+            self.image_text,
+            self.selection_text,
+            self.search_text,
+            self.cursor_text,
+        ):
+            tk.Label(self, textvariable=text, anchor="w").pack(fill="x", padx=8)
 
         self.canvas.bind("<Configure>", lambda event: self.render())
         self.canvas.bind("<Motion>", self.cursor)
-        self.canvas.bind("<Leave>", lambda event: self.cursor_text.set("Cursor: N/A"))
+        self.canvas.bind(
+            "<Leave>", lambda event: self.cursor_text.set("Cursor: N/A")
+        )
+
+        # Normal left drag selects. Pan mode changes that drag into a pan.
         self.canvas.bind("<ButtonPress-1>", self.start_drag)
         self.canvas.bind("<B1-Motion>", self.drag_motion)
         self.canvas.bind("<ButtonRelease-1>", self.finish_drag)
+
+        # A middle or right mouse drag always pans.
         self.canvas.bind("<ButtonPress-2>", self.start_pan)
         self.canvas.bind("<B2-Motion>", self.pan_motion)
-        self.canvas.bind("<ButtonRelease-2>", lambda event: setattr(self, "pan_start", None))
+        self.canvas.bind("<ButtonRelease-2>", self.stop_pan)
         self.canvas.bind("<ButtonPress-3>", self.start_pan)
         self.canvas.bind("<B3-Motion>", self.pan_motion)
-        self.canvas.bind("<ButtonRelease-3>", lambda event: setattr(self, "pan_start", None))
-        self.canvas.bind("<MouseWheel>", self.wheel)
-        self.canvas.bind("<Button-4>", lambda event: self.zoom_at(event, 1))
-        self.canvas.bind("<Button-5>", lambda event: self.zoom_at(event, -1))
-        self.winfo_toplevel().bind_all(
-            "<KeyPress-space>", lambda event: setattr(self, "space", True)
-        )
-        self.winfo_toplevel().bind_all(
-            "<KeyRelease-space>", lambda event: setattr(self, "space", False)
-        )
+        self.canvas.bind("<ButtonRelease-3>", self.stop_pan)
 
-    # Opening and drawing the BMP
+    # Image loading and rendering
     def open_image(self):
         path = filedialog.askopenfilename(filetypes=[("BMP images", "*.bmp")])
         if not path:
@@ -105,7 +129,7 @@ class ImageViewer(tk.Frame):
             messagebox.showerror("Could not open BMP", str(error))
             return
 
-        # Keep old images open until a worker is finished with them.
+        # Keep old files open while an older render or search finishes.
         self.old_sources.append(image)
         self.source = image
         self.image_id += 1
@@ -130,9 +154,9 @@ class ImageViewer(tk.Frame):
     def render(self):
         if not self.source or self.closed:
             return
+
         self.clamp_view()
         canvas_width, canvas_height = self.canvas_size()
-
         if self.zoom <= self.fit_zoom():
             x = y = 0
             width, height = self.source.width, self.source.height
@@ -140,13 +164,26 @@ class ImageViewer(tk.Frame):
             out_height = max(1, int(height * self.zoom))
         else:
             x, y = int(self.view_x), int(self.view_y)
-            width = min(self.source.width - x, max(1, math.ceil(canvas_width / self.zoom)))
-            height = min(self.source.height - y, max(1, math.ceil(canvas_height / self.zoom)))
+            width = min(
+                self.source.width - x,
+                max(1, math.ceil(canvas_width / self.zoom)),
+            )
+            height = min(
+                self.source.height - y,
+                max(1, math.ceil(canvas_height / self.zoom)),
+            )
             out_width = min(canvas_width, max(1, round(width * self.zoom)))
             out_height = min(canvas_height, max(1, round(height * self.zoom)))
 
         self.pending_render = (
-            self.image_id, self.source, x, y, width, height, out_width, out_height
+            self.image_id,
+            self.source,
+            x,
+            y,
+            width,
+            height,
+            out_width,
+            out_height,
         )
         self.zoom_text.set(f"Zoom: {self.zoom:.3f}x")
         self.start_render()
@@ -167,18 +204,21 @@ class ImageViewer(tk.Frame):
             self.messages.put(("render", job[0], job, None, error))
 
     def show_image(self, job, pixels):
-        out_width, out_height = job[-2:]
-        header = f"P6\n{out_width} {out_height}\n255\n".encode()
+        width, height = job[-2:]
+        header = f"P6\n{width} {height}\n255\n".encode()
         self.photo = tk.PhotoImage(data=header + pixels, format="PPM")
         self.origin = (
-            (self.canvas.winfo_width() - out_width) // 2,
-            (self.canvas.winfo_height() - out_height) // 2,
+            (self.canvas.winfo_width() - width) // 2,
+            (self.canvas.winfo_height() - height) // 2,
         )
-        self.display_size = out_width, out_height
+        self.display_size = width, height
         self.canvas.delete("image")
-        self.canvas.create_image(*self.origin, image=self.photo, anchor="nw", tags="image")
+        self.canvas.create_image(
+            *self.origin, image=self.photo, anchor="nw", tags="image"
+        )
         self.draw_boxes()
 
+    # Coordinate helpers and zoom buttons
     def canvas_size(self):
         return max(1, self.canvas.winfo_width()), max(1, self.canvas.winfo_height())
 
@@ -191,8 +231,14 @@ class ImageViewer(tk.Frame):
             self.view_x = self.view_y = 0
             return
         width, height = self.canvas_size()
-        self.view_x = min(max(0, self.view_x), max(0, self.source.width - width / self.zoom))
-        self.view_y = min(max(0, self.view_y), max(0, self.source.height - height / self.zoom))
+        self.view_x = min(
+            max(0, self.view_x),
+            max(0, self.source.width - width / self.zoom),
+        )
+        self.view_y = min(
+            max(0, self.view_y),
+            max(0, self.source.height - height / self.zoom),
+        )
 
     def to_image(self, x, y, clamp=False):
         left, top = self.origin
@@ -200,11 +246,9 @@ class ImageViewer(tk.Frame):
         inside = left <= x < left + width and top <= y < top + height
         if not clamp and not inside:
             return None
-        image_x = self.view_x + (x - left) / self.zoom
-        image_y = self.view_y + (y - top) / self.zoom
         return (
-            max(0, min(self.source.width - 1, image_x)),
-            max(0, min(self.source.height - 1, image_y)),
+            max(0, min(self.source.width - 1, self.view_x + (x - left) / self.zoom)),
+            max(0, min(self.source.height - 1, self.view_y + (y - top) / self.zoom)),
         )
 
     def to_canvas(self, x, y):
@@ -213,15 +257,40 @@ class ImageViewer(tk.Frame):
             self.origin[1] + (y - self.view_y) * self.zoom,
         )
 
-    # Selection, panning, and zoom
+    def change_zoom(self, direction):
+        """Zoom around the center of the window."""
+        if not self.source:
+            return
+
+        width, height = self.canvas_size()
+        center_x, center_y = width / 2, height / 2
+        point = self.to_image(center_x, center_y, True)
+        old_zoom = self.zoom
+        new_zoom = old_zoom * (1.2 if direction > 0 else 1 / 1.2)
+        self.zoom = max(self.fit_zoom(), min(32, new_zoom))
+        if self.zoom == old_zoom:
+            return
+        self.view_x = point[0] - (center_x - self.origin[0]) / self.zoom
+        self.view_y = point[1] - (center_y - self.origin[1]) / self.zoom
+        self.clamp_view()
+        self.render()
+
+    def toggle_pan(self):
+        self.pan_mode = not self.pan_mode
+        self.pan_button.config(text=f"Pan: {'on' if self.pan_mode else 'off'}")
+
+    # Selection and panning
     def cursor(self, event):
         point = self.to_image(event.x, event.y)
-        self.cursor_text.set(
-            "Cursor: N/A" if point is None else f"Cursor: x={int(point[0])}, y={int(point[1])}"
-        )
+        if point is None:
+            self.cursor_text.set("Cursor: N/A")
+        else:
+            self.cursor_text.set(f"Cursor: x={int(point[0])}, y={int(point[1])}")
 
     def start_drag(self, event):
-        if self.space:
+        if not self.source:
+            return
+        if self.pan_mode:
             self.start_pan(event)
             return
         point = self.to_image(event.x, event.y)
@@ -238,13 +307,16 @@ class ImageViewer(tk.Frame):
         end = self.to_image(event.x, event.y, True)
         self.canvas.delete("selection")
         self.canvas.create_rectangle(
-            *self.to_canvas(*self.drag_start), *self.to_canvas(*end),
-            outline="red", width=2, tags="selection"
+            *self.to_canvas(*self.drag_start),
+            *self.to_canvas(*end),
+            outline="red",
+            width=2,
+            tags="selection",
         )
 
     def finish_drag(self, event):
         if self.pan_start:
-            self.pan_start = None
+            self.stop_pan()
             return
         if not self.drag_start:
             return
@@ -283,42 +355,37 @@ class ImageViewer(tk.Frame):
             if dash:
                 options["dash"] = dash
             self.canvas.create_rectangle(
-                *self.to_canvas(x, y), *self.to_canvas(x + width, y + height), **options
+                *self.to_canvas(x, y),
+                *self.to_canvas(x + width, y + height),
+                **options,
             )
 
     def start_pan(self, event):
+        if not self.source or self.zoom <= self.fit_zoom():
+            return
         self.pan_start = event.x, event.y, self.view_x, self.view_y
+
+    def stop_pan(self, event=None):
+        self.pan_start = None
 
     def pan_motion(self, event):
         if not self.pan_start:
             return
-        start_x, start_y, view_x, view_y = self.pan_start
-        self.view_x = view_x - (event.x - start_x) / self.zoom
-        self.view_y = view_y - (event.y - start_y) / self.zoom
+        start_x, start_y, start_view_x, start_view_y = self.pan_start
+        old_view_x, old_view_y = self.view_x, self.view_y
+        self.view_x = start_view_x - (event.x - start_x) / self.zoom
+        self.view_y = start_view_y - (event.y - start_y) / self.zoom
+        self.clamp_view()
+
+        # Move the existing canvas items immediately. The next render replaces
+        # them with the correct crop from the BMP.
+        dx = (old_view_x - self.view_x) * self.zoom
+        dy = (old_view_y - self.view_y) * self.zoom
+        self.canvas.move("all", dx, dy)
+        self.origin = self.origin[0] + dx, self.origin[1] + dy
         self.render()
 
-    def wheel(self, event):
-        if getattr(event, "num", None) == 4:
-            steps = 1
-        elif getattr(event, "num", None) == 5:
-            steps = -1
-        else:
-            delta = getattr(event, "delta", 0)
-            if not delta:
-                return
-            steps = delta / 120 if abs(delta) >= 120 else (1 if delta > 0 else -1)
-        self.zoom_at(event, steps)
-
-    def zoom_at(self, event, steps):
-        if not self.source:
-            return
-        point = self.to_image(event.x, event.y, True)
-        self.zoom = max(0.02, min(32, self.zoom * 1.03 ** steps))
-        self.view_x = point[0] - (event.x - self.origin[0]) / self.zoom
-        self.view_y = point[1] - (event.y - self.origin[1]) / self.zoom
-        self.render()
-
-    # Search and background worker updates
+    # Search and progress updates
     def find(self):
         if not self.source or not self.selection:
             return
@@ -332,7 +399,9 @@ class ImageViewer(tk.Frame):
         self.search_text.set("Search: 0% | 0.0 s | copying selection")
         self.find_button.config(state="disabled")
         self.draw_boxes()
-        self.workers.submit(self.search_worker, search_id, self.source, self.selection, method)
+        self.workers.submit(
+            self.search_worker, search_id, self.source, self.selection, method
+        )
 
     def search_worker(self, search_id, source, selection, method):
         def update(fraction, phase, position=None):
